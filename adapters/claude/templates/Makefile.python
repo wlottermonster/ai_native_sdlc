@@ -1,0 +1,21 @@
+# AI-Native SDLC repo contract — Python template.
+# Copy into a repo as `Makefile` and adjust the tool paths. The framework only
+# ever calls `make check` and `make test` — keep those names.
+# TEST_PROFILE tells agents how deep testing goes here: lib | api | webapp | static
+TEST_PROFILE = api
+
+# TIMEOUT BUDGET: the commit gate runs `check` as a PreToolUse hook with a 600s
+# timeout, and a hook that times out does NOT block — a `check` that overran
+# used to leave every commit ungated while looking gated. The gate now
+# stops the checks 30s before that timeout and blocks the commit instead.
+# Keep `check` inside 600s; if it cannot fit, split the slow work into `test`
+# rather than raising the timeout.
+check:  ## fast gate: lint + typecheck + fast tests (aim < ~60s)
+	.venv/bin/ruff check .
+	.venv/bin/mypy .
+	.venv/bin/pytest -x -q -m "not slow"
+
+test:   ## full suite
+	.venv/bin/pytest -q
+
+.PHONY: check test

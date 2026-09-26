@@ -1,0 +1,5 @@
+#!/bin/sh
+# Read-only by default; explicit verification can execute project gates.
+set -eu
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec python3.12 "$here/core/doctor.py" "$@"

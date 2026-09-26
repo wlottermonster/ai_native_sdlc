@@ -1,0 +1,21 @@
+# AI-Native SDLC repo contract — Node/TypeScript template.
+# Copy into a repo as `Makefile` and adjust to the repo's scripts. The framework
+# only ever calls `make check` and `make test` — keep those names.
+# TEST_PROFILE tells agents how deep testing goes here: lib | api | webapp | static
+TEST_PROFILE = webapp
+
+# TIMEOUT BUDGET: the commit gate runs `check` as a PreToolUse hook with a 600s
+# timeout, and a hook that times out does NOT block — a `check` that overran
+# used to leave every commit ungated while looking gated. The gate now
+# stops the checks 30s before that timeout and blocks the commit instead.
+# Keep `check` inside 600s; if it cannot fit, split the slow work into `test`
+# rather than raising the timeout.
+check:  ## fast gate: lint + typecheck + fast tests (aim < ~60s)
+	npx eslint .
+	npx tsc --noEmit
+	npm test --silent -- --bail
+
+test:   ## full suite
+	npm test --silent
+
+.PHONY: check test

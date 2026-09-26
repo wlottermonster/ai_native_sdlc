@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>AI-Native SDLC · Training guide</title>
+<style>
+:root{--ink:#182b32;--muted:#52656c;--navy:#142c35;--navy-2:#234852;--mint:#1f9a83;--mint-light:#e7f5ef;--orange:#ba6d35;--orange-light:#fff0df;--paper:#f4f6f2;--white:#fff;--line:#dce5e2;--shadow:0 10px 28px rgba(22,47,54,.07)}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",sans-serif}
+button{font:inherit}a{color:inherit}a:hover{color:var(--mint)}:focus-visible{outline:3px solid #e5a85e;outline-offset:3px}
+.wrap{max-width:1160px;margin:auto;padding:0 24px 90px}
+.topbar{background:var(--navy);color:#fff;border-bottom:1px solid rgba(255,255,255,.15)}
+.topbar-inner{max-width:1160px;margin:auto;padding:15px 24px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.brand{font-weight:800;letter-spacing:-.03em;text-decoration:none;font-size:1.05rem;white-space:nowrap}.brand span{color:#80d9bb}
+.toplinks{display:flex;gap:24px;align-items:center;font-size:.84rem;font-weight:650}.toplinks a{text-decoration:none;color:#d4e6e5}.toplinks a:hover{color:#fff}
+.langsw{display:flex;gap:2px;padding:3px;border:1px solid rgba(255,255,255,.27);border-radius:9px;white-space:nowrap}
+.langsw button{border:0;background:none;color:#d4e6e5;border-radius:6px;padding:5px 9px;font-size:.77rem;font-weight:800;cursor:pointer}.langsw button[aria-pressed=true]{background:#fff;color:var(--navy)}
+.hero{background:var(--navy);color:#fff;overflow:hidden}.hero-inner{max-width:1160px;margin:auto;padding:70px 24px 80px;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);gap:65px;align-items:center}
+.eyebrow{font-size:.75rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#84d9bd}.hero h1{font-size:clamp(2.7rem,5.8vw,5rem);line-height:1.06;letter-spacing:-.055em;max-width:12ch;margin:16px 0 22px}.hero .lede{font-size:1.15rem;color:#cfe0df;max-width:54ch;margin:0 0 28px}.hero-actions{display:flex;gap:12px;flex-wrap:wrap}.button{display:inline-flex;align-items:center;gap:8px;text-decoration:none;border-radius:9px;padding:12px 17px;font-weight:750;font-size:.88rem}.button.primary{background:#8be1c0;color:#10292d}.button.secondary{border:1px solid #6c9295;color:#fff}.button:hover{transform:translateY(-1px);color:inherit}
+.hero-visual{position:relative;min-height:320px;background:radial-gradient(circle at 65% 40%,rgba(135,226,196,.16),transparent 52%),linear-gradient(145deg,#254a52,#18343e);border:1px solid rgba(255,255,255,.18);border-radius:22px;padding:22px;box-shadow:0 25px 70px rgba(0,0,0,.18)}
+.hero-visual::after{content:"";position:absolute;width:180px;height:180px;border:1px solid rgba(255,255,255,.1);border-radius:50%;right:-65px;bottom:-65px}.visual-label{font-size:.72rem;letter-spacing:.13em;text-transform:uppercase;color:#9dc6c6;font-weight:800}.visual-step{display:flex;align-items:center;gap:13px;margin-top:21px}.visual-n{width:31px;height:31px;border-radius:50%;display:grid;place-items:center;background:#8be1c0;color:#12323a;font-weight:800;font-size:.78rem;flex:none}.visual-step strong{font-size:.95rem}.visual-step small{display:block;color:#bad0cf;font-size:.78rem}.visual-line{height:15px;border-left:1px dashed #8bb4af;margin-left:15px}.visual-proof{margin-top:25px;border-top:1px solid rgba(255,255,255,.17);padding-top:15px;font-size:.83rem;color:#d4e6e5}.visual-proof b{color:#8be1c0}
+section{scroll-margin-top:24px;margin-top:72px}.section-head{display:flex;align-items:end;justify-content:space-between;gap:25px;margin-bottom:22px}.section-kicker{display:block;color:var(--mint);text-transform:uppercase;letter-spacing:.14em;font-size:.72rem;font-weight:800;margin-bottom:7px}h2{font-size:clamp(1.65rem,2.7vw,2.3rem);letter-spacing:-.045em;line-height:1.18;margin:0}h3{font-size:1rem;margin:0 0 8px;line-height:1.3}.section-head p{color:var(--muted);max-width:47ch;margin:0}.small{font-size:.88rem;color:var(--muted)}
+.path{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}.step{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px 18px;min-height:190px;box-shadow:var(--shadow);position:relative}.step-num{display:block;color:var(--mint);font-weight:850;font-size:.76rem;letter-spacing:.12em;margin-bottom:30px}.step h3{font-size:1.05rem}.step p{font-size:.86rem;color:var(--muted);margin:0}.step.human{background:var(--orange-light);border-color:#e8c9aa}.step.human .step-num{color:var(--orange)}.step.human p{color:#5c5047}.path-note{background:#e6efe9;border-left:4px solid var(--mint);border-radius:7px;padding:13px 17px;font-size:.88rem;margin-top:16px}
+.decision-grid,.proof-grid,.action-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.decision,.proof,.action{background:#fff;border:1px solid var(--line);border-radius:15px;padding:22px;box-shadow:var(--shadow)}.decision{border-top:4px solid var(--orange)}.decision .tag{display:inline-block;color:#9b5929;background:var(--orange-light);border-radius:5px;padding:4px 7px;font-size:.67rem;letter-spacing:.08em;font-weight:850;margin-bottom:18px}.decision p,.proof p,.action p{margin:0;color:var(--muted);font-size:.88rem}.proof{border-top:4px solid var(--mint)}.proof .icon{width:35px;height:35px;border-radius:8px;display:grid;place-items:center;background:var(--mint-light);color:#0b735f;font-weight:850;margin-bottom:18px}.action{padding:18px}.action code{display:block;color:#096f5c;font-size:.88rem;font-weight:750;margin-bottom:8px}.action h3{margin:0 0 5px}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.86em;overflow-wrap:anywhere}p code,td code,li code{background:#ecf3f0;border:1px solid #d7e7e0;border-radius:4px;padding:.1em .35em}
+.reference{background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:0 24px}.reference details{border-bottom:1px solid var(--line)}.reference details:last-child{border:0}.reference summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:20px;align-items:center;padding:22px 0;font-weight:750;font-size:1.02rem}.reference summary::-webkit-details-marker{display:none}.reference summary::after{content:"+";display:grid;place-items:center;width:25px;height:25px;background:var(--mint-light);color:#08725f;border-radius:6px;flex:none}.reference details[open] summary::after{content:"−"}.ref-body{padding:0 0 25px;color:var(--muted);font-size:.91rem}.ref-body p{max-width:78ch}.ref-body h2{font-size:1.22rem;letter-spacing:-.02em;margin:26px 0 12px;color:var(--ink)}.ref-body h3{color:var(--ink)}
+.ref-body section{margin-top:0}.table-wrap,.tbl-scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:490px;color:var(--ink);font-size:.88rem}th{text-align:left;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-size:.68rem;font-weight:850;padding:11px;border-bottom:1px solid var(--line)}td{padding:12px 11px;border-bottom:1px solid var(--line);vertical-align:top}tr:last-child td{border:0}
+.note{background:var(--mint-light);border-left:4px solid var(--mint);border-radius:6px;padding:12px 15px;color:#244740;margin:16px 0}.warning{background:var(--orange-light);border-left-color:var(--orange);color:#65452e}
+.chip{display:inline-block;border-radius:4px;padding:3px 7px;font-size:.68rem;font-weight:800;letter-spacing:.05em}.chip.judge{background:#eae9f7;color:#4c458a}.chip.build,.chip.ok{background:#e3f5ee;color:#08725f}.chip.verify{background:#f6e8f1;color:#85436c}.chip.read{background:#eef4e5;color:#56742d}.chip.mech,.chip.off{background:#e9eeee;color:#52656c}.chip.warn{background:var(--orange-light);color:var(--orange)}
+.projects{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:18px}.proj-btn{display:flex;flex-direction:column;gap:5px;text-align:left;cursor:pointer;border:1px solid var(--line);border-radius:12px;background:#fff;padding:17px;color:var(--ink)}.proj-btn:hover,.proj-btn[aria-expanded=true]{border-color:var(--mint);box-shadow:var(--shadow)}.pname{font-weight:800}.pwhat{font-size:.83rem;color:var(--muted)}.pmeta{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:5px;font-size:.74rem}.pmeta code{color:var(--muted)}.ppanel{border:1px solid var(--mint);border-radius:12px;background:#fff;padding:21px;margin-top:14px;color:var(--ink)}.ppanel[hidden]{display:none}.ppanel .close{float:right;cursor:pointer;border:1px solid var(--line);background:#fff;border-radius:6px;padding:5px 9px}.ppanel .lead{color:var(--muted)}.ppanel .rulebox{background:var(--orange-light);border-left:4px solid var(--orange);border-radius:6px;padding:12px 15px;margin-top:20px}.grp{font-weight:800;color:#08725f;margin:25px 0 8px}.cmdlist{list-style:none;padding:0;margin:0}.cmdlist li{display:grid;grid-template-columns:150px 1fr;gap:15px;border-top:1px solid var(--line);padding:10px 0}.cmdlist .cmd{color:#08725f;font-family:ui-monospace,monospace;font-size:.82rem}.cmdlist .desc{font-size:.86rem}
+.intro{background:#fff;border:1px solid var(--line);border-left:5px solid var(--mint);border-radius:15px;padding:24px 26px;box-shadow:var(--shadow);margin-top:48px}.intro h2{margin-bottom:10px}.intro p{margin:0 0 8px;max-width:75ch}.intro p:last-child{margin-bottom:0}
+.glossary{display:grid;grid-template-columns:170px 1fr;gap:12px 20px;margin:0;color:var(--ink)}.glossary dt{font-weight:800}.glossary dd{margin:0;color:var(--muted)}
+.tryband{background:var(--navy);color:#fff;border-radius:18px;padding:34px 30px}.tryband .section-kicker{color:#84d9bd}.tryband p{color:#cfe0df;max-width:65ch;margin:10px 0 22px}
+.footer{margin-top:60px;border-top:1px solid var(--line);padding-top:20px;color:var(--muted);font-size:.8rem}
+@media(max-width:900px){.hero-inner{gap:28px}.path{grid-template-columns:repeat(3,1fr)}.path .step{min-height:165px}.decision-grid,.proof-grid,.action-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:650px){.wrap{padding:0 17px 60px}.topbar-inner{padding:12px 17px;flex-wrap:wrap}.toplinks{gap:12px;font-size:.76rem}.hero-inner{display:block;padding:50px 17px 55px}.hero-visual{display:none}.hero h1{max-width:13ch}.section-head{display:block}.section-head p{margin-top:10px}.path,.decision-grid,.proof-grid,.action-grid,.projects{grid-template-columns:1fr}.step{min-height:0}.step-num{margin-bottom:16px}.reference{padding:0 16px}.cmdlist li{grid-template-columns:1fr;gap:2px}.glossary{grid-template-columns:1fr;gap:2px}.glossary dd{margin-bottom:10px}.intro,.tryband{padding:22px 18px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.button:hover{transform:none}}
+</style>
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner"><a class="brand" href="#top">AI-Native <span>SDLC</span></a><nav class="toplinks" aria-label="Page"><a href="#path" data-i18n="nav.path">The flow</a><a href="#decisions" data-i18n="nav.decisions">Your role</a><a href="#reference" data-i18n="nav.reference">Reference</a></nav><div class="langsw" role="group" aria-label="Language"><button type="button" id="lang-en" aria-pressed="true" lang="en">EN</button><button type="button" id="lang-zh" aria-pressed="false" lang="zh-Hant">繁中</button></div></div></header>
+<div id="top" class="hero"><div class="hero-inner"><div><div class="eyebrow" data-i18n="hero.kicker">A practical training guide</div><h1 data-i18n="hero.title">From idea to release, with proof at every step.</h1><p class="lede" data-i18n="hero.lede">The AI plans, builds and checks the work. You decide what should be built, try the result, and decide when it is ready to ship.</p><div class="hero-actions"><a class="button primary" href="#path" data-i18n="hero.start">Learn the flow <span aria-hidden="true">→</span></a><a class="button secondary" href="#reference" data-i18n="hero.lookup">Look up a command</a></div></div><div class="hero-visual" aria-hidden="true"><div class="visual-label">THE WORKING LOOP</div><div class="visual-step"><span class="visual-n">01</span><div><strong>Decide</strong><small>Define the right outcome</small></div></div><div class="visual-line"></div><div class="visual-step"><span class="visual-n">02</span><div><strong>Build</strong><small>Tests first, on a branch</small></div></div><div class="visual-line"></div><div class="visual-step"><span class="visual-n">03</span><div><strong>Verify</strong><small>Fresh checks and review</small></div></div><div class="visual-line"></div><div class="visual-step"><span class="visual-n">04</span><div><strong>Release</strong><small>Your call, with evidence</small></div></div><div class="visual-proof"><b>Rule:</b> a completion claim needs passing checks and a visible change.</div></div></div></div>
+<main class="wrap">
+<section id="intro" class="intro"><span class="section-kicker" data-i18n="intro.kicker">Start here</span><h2 data-i18n="intro.title">What is this?</h2><div data-i18n="intro.body"><p><b>The problem:</b> AI coding assistants sometimes say “done” while the tests are still failing.</p><p><b>The fix:</b> AI-Native SDLC (Software Development Life Cycle) adds checks that run automatically inside the AI tool, plus two decisions that stay with a person: approve the plan, and approve the release.</p><p><b>Who it is for:</b> anyone building software with Claude Code or Codex.</p></div></section>
+<section id="path"><div class="section-head"><div><span class="section-kicker" data-i18n="path.kicker">01 / The lifecycle</span><h2 data-i18n="path.title">The whole process in five steps</h2></div><p data-i18n="path.intro">Use this as the short version when teaching the framework.</p></div><div class="path" data-i18n="path.cards"><article class="step human"><span class="step-num">01 · YOU</span><h3>Describe the outcome</h3><p>Say what should change. The AI asks for missing decisions and writes a plan.</p></article><article class="step"><span class="step-num">02 · PLAN</span><h3>Check the plan</h3><p>Requirements, design and proof are recorded. A reviewer looks for gaps.</p></article><article class="step"><span class="step-num">03 · BUILD</span><h3>Build on a branch</h3><p>Tests lead the code. Each change passes the project’s checks.</p></article><article class="step"><span class="step-num">04 · VERIFY</span><h3>Prove it works</h3><p>Fresh eyes run the full suite and review the result. Web apps may get a browser walkthrough.</p></article><article class="step human"><span class="step-num">05 · YOU</span><h3>Try it, then ship</h3><p>Test the local result. Send findings as one batch. Release when ready.</p></article></div><div class="path-note" data-i18n="path.note"><b>One rule to remember:</b> “Done” needs current evidence: passing checks, relevant tests and a change you can inspect. The automatic checks only run once you have approved them in the AI tool and set up the project.</div></section>
+<section id="decisions"><div class="section-head"><div><span class="section-kicker" data-i18n="decisions.kicker">02 / Your role</span><h2 data-i18n="decisions.title">The decisions that stay with you</h2></div><p data-i18n="decisions.intro">The AI handles routine execution. Your judgment sets direction and release timing.</p></div><div class="decision-grid" data-i18n="decisions.cards"><article class="decision"><span class="tag">GATE 1</span><h3>Approve the plan</h3><p>Is this the right thing to build? Review the short digest and the choices that matter.</p></article><article class="decision"><span class="tag">YOUR TEST SESSION</span><h3>Try the local version</h3><p>Use it as a customer would. Collect screenshots and one-line findings in a single batch.</p></article><article class="decision"><span class="tag">GATE 2</span><h3>Choose when to ship</h3><p>Review the branch, test evidence and release effect. Where push triggers deployment, shipping reaches users.</p></article></div></section>
+<section id="proof"><div class="section-head"><div><span class="section-kicker" data-i18n="proof.kicker">03 / Evidence</span><h2 data-i18n="proof.title">What “verified” means</h2></div></div><div class="proof-grid" data-i18n="proof.cards"><article class="proof"><span class="icon">✓</span><h3>Fast check</h3><p><code>make check</code> catches immediate problems before a commit. If a check cannot run, it says no instead of quietly saying yes.</p></article><article class="proof"><span class="icon">↗</span><h3>Full test</h3><p><code>make test</code> exercises the project’s behavior before release. The result must be current for the code being shipped.</p></article><article class="proof"><span class="icon">◎</span><h3>Independent look</h3><p>A reviewer checks assumptions and gaps. For a web app, a browser walkthrough adds user-facing evidence.</p></article></div></section>
+<section id="choose"><div class="section-head"><div><span class="section-kicker" data-i18n="choose.kicker">04 / Quick start</span><h2 data-i18n="choose.title">Start with the task you have</h2></div><p data-i18n="choose.intro">These slash commands are for Claude Code. In Codex, describe the task in plain language or use its installed skills.</p></div><div class="action-grid" data-i18n="choose.cards"><article class="action"><code>/feature &lt;idea&gt;</code><h3>Build something new</h3><p>Plan through review, with your decisions at the gates.</p></article><article class="action"><code>/rca &lt;bug&gt;</code><h3>Fix a known bug</h3><p>Reproduce it, fix the cause and add a regression test.</p></article><article class="action"><code>/hunt</code><h3>Find unknown bugs</h3><p>Search one repo, prove findings and stop with a reason.</p></article></div></section>
+<section id="reference"><div class="section-head"><div><span class="section-kicker" data-i18n="reference.kicker">05 / Keep handy</span><h2 data-i18n="reference.title">Reference</h2></div><p data-i18n="reference.intro">Open only the detail you need during a session.</p></div><div class="reference">
+<details><summary data-i18n="ref.commands">Commands and when to use them</summary><div class="ref-body"><p data-i18n="cmd.p">These seven commands belong to Claude Code. Codex uses its own skills and plain-language requests.</p><div class="table-wrap"><table data-i18n="cmd.table"><tr><th>Command</th><th>Use it for</th></tr>
+<tr><td><code>/feature &lt;idea&gt;</code></td><td>Plan and build a new feature through review.</td></tr>
+<tr><td><code>/spec &lt;idea&gt;</code></td><td>Plan only, without changing code.</td></tr>
+<tr><td><code>/build</code></td><td>Build work already approved; it does not publish.</td></tr>
+<tr><td><code>/ship</code></td><td>Review release decisions, merge, re-check and push.</td></tr>
+<tr><td><code>/rca &lt;bug&gt;</code></td><td>Reproduce a known bug, fix its cause and protect against recurrence.</td></tr>
+<tr><td><code>/hunt</code></td><td>Search for unknown bugs on its own, record findings and stop with a reason; it never publishes.</td></tr>
+<tr><td><code>/test-audit</code></td><td>Check whether the test suite still proves meaningful behavior.</td></tr></table></div><p data-i18n="cmd.note"><b>Remember:</b> <code>check</code> is the fast lane: syntax and lint; <code>test</code> runs the tests you already have; <code>/hunt</code> looks for gaps those tests miss. In short: hunt looks for bugs, test-audit judges the tests, rca kills the class of one known bug.</p></div></details>
+<details><summary data-i18n="ref.handoff">Switching between Claude Code and Codex</summary><div class="ref-body"><div class="table-wrap"><table data-i18n="handoff.table"><tr><th>Start in</th><th>Hand off</th><th>Return</th></tr><tr><td>Codex</td><td><code>$handoff claude</code></td><td><code>$handback</code></td></tr><tr><td>Claude Code</td><td><code>/handoff codex</code></td><td><code>/handback</code></td></tr></table></div><p data-i18n="handoff.note">The sender saves a short briefing and the receiver accepts it in its own session. Return goes to that exact source conversation. Each client accounts for its own usage; the handoff does not share a live context window.</p><div class="note warning" data-i18n="handoff.caveat">Automated tests cover the handoff helper. A full live round trip across both clients, including switching between the apps, has not been verified end to end.</div></div></details>
+<details><summary data-i18n="ref.roles">Roles, models and gates</summary><div class="ref-body"><section><h2>The crew</h2><p data-i18n="crew.note">The roles below describe jobs. Which AI model fills each role is set in the tool’s engine map. The map records the model you asked for; it cannot prove which model is actually running.</p><div class="table-wrap"><table data-i18n="crew.table"><tr><th>Role</th><th>Job</th></tr><tr><td><span class="chip judge">JUDGE</span></td><td>Plans and makes decisions in the main session.</td></tr><tr><td><span class="chip build">BUILD</span></td><td>Implements approved work with tests.</td></tr><tr><td><span class="chip verify">VERIFY</span></td><td>Reviews plans and checks finished work.</td></tr><tr><td><span class="chip read">READ</span></td><td>Researches and gathers evidence.</td></tr><tr><td><span class="chip mech">HOOKS</span></td><td>Mechanical checks; they do not make judgments.</td></tr></table></div><p data-i18n="crew.maps">Claude role map: <code>~/.claude/sdlc-engines.conf</code>. Codex role map: <code>~/.codex/sdlc-openai/engines.toml</code>. A change applies to work handed out after you save it; a session that is already open keeps the model it started with. Escalation needs your explicit request.</p></section></div></details>
+<details><summary data-i18n="ref.health">Setup, doctor and current evidence</summary><div class="ref-body"><div class="table-wrap"><table data-i18n="health.table"><tr><th>Command</th><th>What it checks</th></tr><tr><td><code>./doctor</code></td><td>Installed files, routing and local dependencies.</td></tr><tr><td><code>./doctor --workspace /path/to/workspace</code></td><td>Project setup and the saved results of earlier runs; it does not rerun tests.</td></tr><tr><td><code>./doctor --project /path/to/repo --verify</code></td><td>For one project: a fresh time-limited run of the checks.</td></tr></table></div><p data-i18n="health.note">Use doctor after changing settings, upgrading a client or adding a project. This page explains the workflow; doctor reports live status. Installing this framework starts no service.</p></div></details>
+<details><summary data-i18n="ref.glossary">Words used here</summary><div class="ref-body"><dl class="glossary" data-i18n="glossary.list"><dt>Gate</dt><dd>A point where work stops until a check passes or a person says yes. Gate 1 approves the plan; Gate 2 approves the release.</dd><dt>Hook</dt><dd>A small script the AI tool runs automatically at set moments, for example before a commit is saved. It runs the checks; it does not make judgments.</dd><dt>Spec</dt><dd>The written plan for a change: requirements (what it must do), design (how) and tasks (the steps).</dd><dt>REQ-ID</dt><dd>A short label such as <code>REQ-LOGIN-001</code> on each requirement. The test that proves it carries the same label, so you can see what is covered.</dd><dt>Worktree</dt><dd>A separate working copy of the project, so the AI can build on a branch without touching the copy you are using.</dd><dt>RCA</dt><dd>Root cause analysis: find why a bug happened, fix the cause, add a test so it cannot quietly come back, and look for the same mistake elsewhere.</dd><dt>The roles</dt><dd>Judge, build, verify and read: the four jobs the AI work is split into. Each is a job, not a fixed model.</dd><dt>Engine map</dt><dd>A small settings file that says which AI model fills each role. You can edit it; the change applies to new work.</dd></dl></div></details>
+<details><summary data-i18n="ref.projects">Project-specific routines</summary><div class="ref-body"><p data-i18n="projects.intro">The framework handles common work; projects may add their own routines. For current project evidence, run <code>./doctor --workspace /path/to/workspace</code>. Select a card for its local commands.</p><p class="note" data-i18n="projects.trainers">Trainers: open this file in a text editor, find the PROJECTS list and copy the example block to add your own projects.</p><div class="projects" id="projects"></div><div class="ppanel" id="ppanel" hidden></div></div></details>
+</div></section>
+<section id="try" class="tryband"><span class="section-kicker" data-i18n="try.kicker">06 / Next step</span><h2 data-i18n="try.title">Try it yourself</h2><p data-i18n="try.body">The README has a one-hour training walk-through you can follow step by step on a small project of your own, and a glossary of every word used here.</p><div class="hero-actions" data-i18n="try.links"><a class="button primary" href="https://github.com/wlottermonster/ai_native_sdlc#your-first-hour-a-training-walk-through">Your first hour: the walk-through <span aria-hidden="true">→</span></a><a class="button secondary" href="https://github.com/wlottermonster/ai_native_sdlc#words-used-here">Words used here: the glossary</a></div></section>
+<footer class="footer" data-i18n="footer">AI-Native SDLC · training guide · English / 繁中</footer>
+</main>
+<script>
+const ZH = {
+  "nav.path":"流程","nav.decisions":"你的角色","nav.reference":"參考資料",
+  "hero.kicker":"實用培訓指南","hero.title":"由想法到發佈，每一步都有證據。","hero.lede":"AI 規劃、建造並檢查工作。你決定要建甚麼、試用成果，以及何時可以發佈。","hero.start":'了解流程 <span aria-hidden="true">→</span>',"hero.lookup":"查閱指令",
+  "intro.kicker":"從這裡開始","intro.title":"這是甚麼？",
+  "intro.body":"<p><b>問題：</b>AI 編程助手有時在測試仍然失敗時，就說「完成」。</p><p><b>解決方法：</b>AI-Native SDLC（軟件開發生命週期，Software Development Life Cycle）在 AI 工具內加入自動運行的檢查，再加上兩個由人作的決定：批准計劃，以及批准發佈。</p><p><b>適合誰：</b>任何用 Claude Code 或 Codex 開發軟件的人。</p>",
+  "path.kicker":"01 / 生命週期","path.title":"五步看懂整個流程","path.intro":"培訓時可以先用這個簡短版本。",
+  "path.cards":`<article class="step human"><span class="step-num">01 · 你</span><h3>描述成果</h3><p>說明想改變甚麼。AI 詢問欠缺的決定，並寫出計劃。</p></article><article class="step"><span class="step-num">02 · 規劃</span><h3>檢查計劃</h3><p>記錄需求、設計和驗證方法；審查者尋找缺漏。</p></article><article class="step"><span class="step-num">03 · 建造</span><h3>在分支上建造</h3><p>先寫測試，再寫程式；每次改動都要通過專案檢查。</p></article><article class="step"><span class="step-num">04 · 驗證</span><h3>證明成果</h3><p>另一雙眼睛運行完整測試並審查成果。網頁應用程式可加入瀏覽器走查。</p></article><article class="step human"><span class="step-num">05 · 你</span><h3>試用，然後發佈</h3><p>測試本機版本，把發現集中成一批；準備好才發佈。</p></article>`,
+  "path.note":"<b>記住一條規則：</b>「完成」需要當前證據：通過的檢查、相關測試，以及可供查看的改動。自動檢查要在你於 AI 工具中批准它們、並完成專案設定後才會運行。",
+  "decisions.kicker":"02 / 你的角色","decisions.title":"留給你作的決定","decisions.intro":"AI 處理例行執行；由你決定方向和發佈時機。",
+  "decisions.cards":`<article class="decision"><span class="tag">第一道門</span><h3>批准計劃</h3><p>這是該建造的東西嗎？查看簡短摘要和重要選項。</p></article><article class="decision"><span class="tag">你的測試時段</span><h3>試用本機版本</h3><p>像客戶一樣使用它；以一批截圖和每項一行的發現回報。</p></article><article class="decision"><span class="tag">第二道門</span><h3>決定何時發佈</h3><p>查看分支、測試證據和發佈影響。若推送會觸發部署，發佈便會交到用戶手上。</p></article>`,
+  "proof.kicker":"03 / 證據","proof.title":"「已驗證」是甚麼意思",
+  "proof.cards":`<article class="proof"><span class="icon">✓</span><h3>快速檢查</h3><p><code>make check</code> 在提交前找出即時問題。如果檢查無法運行，它會說「不」，而不是悄悄放行。</p></article><article class="proof"><span class="icon">↗</span><h3>完整測試</h3><p><code>make test</code> 在發佈前檢查專案行為。結果必須對應即將發佈的程式碼。</p></article><article class="proof"><span class="icon">◎</span><h3>獨立審視</h3><p>審查者檢查假設和缺漏；網頁應用程式的瀏覽器走查補充用戶角度的證據。</p></article>`,
+  "choose.kicker":"04 / 快速開始","choose.title":"從你手上的工作開始","choose.intro":"這些斜線指令屬於 Claude Code。在 Codex，直接描述工作或使用已安裝技能。",
+  "choose.cards":`<article class="action"><code>/feature &lt;想法&gt;</code><h3>建造新功能</h3><p>由規劃到審查，在關卡由你作決定。</p></article><article class="action"><code>/rca &lt;錯誤&gt;</code><h3>修正已知錯誤</h3><p>先重現，再修正原因並加上回歸測試。</p></article><article class="action"><code>/hunt</code><h3>尋找未知錯誤</h3><p>搜索一個程式庫，證實發現，並說明停止原因。</p></article>`,
+  "reference.kicker":"05 / 隨時查閱","reference.title":"參考資料","reference.intro":"需要哪項細節才打開哪項。",
+  "ref.commands":"指令與使用時機","ref.handoff":"在 Claude Code 與 Codex 之間交接","ref.roles":"角色、模型與關卡","ref.health":"設定、doctor 與當前證據","ref.projects":"專案專屬例行工作","ref.glossary":"本頁用語",
+  "cmd.p":"這七個指令屬於 Claude Code。Codex 使用自己的技能和自然語言請求。",
+  "cmd.table":`<tr><th>指令</th><th>用途</th></tr><tr><td> <code>/feature &lt;想法&gt;</code></td><td>規劃並建造新功能，直到審查完成。</td></tr><tr><td>
+<code>/spec &lt;想法&gt;</code></td><td>只規劃，不改程式碼。</td></tr><tr><td>
+<code>/build</code></td><td>建造已批准的工作；不會發佈。</td></tr><tr><td>
+<code>/ship</code></td><td>審視發佈決定、合併、重新檢查和推送。</td></tr><tr><td>
+<code>/rca &lt;錯誤&gt;</code></td><td>重現已知錯誤、修正原因，並預防再發生。</td></tr><tr><td>
+<code>/hunt</code></td><td>自行尋找未知錯誤，記錄發現，並說明停止原因；不會發佈。</td></tr><tr><td>
+<code>/test-audit</code></td><td>檢查測試套件是否仍能證明有意義的行為。</td></tr>`,
+  "cmd.note":"<b>記住：</b><code>check</code> 是快速通道：語法和 lint 檢查；<code>test</code> 運行已有的測試；<code>/hunt</code> 尋找測試遺漏的問題。簡單來說：hunt 找錯誤，test-audit 評審測試，rca 根除某個已知錯誤所屬的整類問題。",
+  "handoff.table":`<tr><th>起點</th><th>交接</th><th>返回</th></tr><tr><td>Codex</td><td><code>$handoff claude</code></td><td><code>$handback</code></td></tr><tr><td>Claude Code</td><td><code>/handoff codex</code></td><td><code>/handback</code></td></tr>`,
+  "handoff.note":"發送端保存簡短簡報；接收端在自己的工作階段接受。返回會送到原來的對話。兩個客戶端分別計算用量；交接不會共享即時脈絡視窗。",
+  "handoff.caveat":"自動測試覆蓋交接輔助程式；但兩個客戶端之間的完整實際往返（包括在應用程式之間切換）未經端到端驗證。",
+  "crew.note":"下列角色描述工作。每個角色由哪個 AI 模型擔任，在該工具的引擎對照表設定。對照表只記錄你要求的模型，不能證明實際運行的是哪個模型。",
+  "crew.table":`<tr><th>角色</th><th>工作</th></tr><tr><td><span class="chip judge">JUDGE</span></td><td>在主要工作階段規劃與決策。</td></tr><tr><td><span class="chip build">BUILD</span></td><td>以測試實作已批准的工作。</td></tr><tr><td><span class="chip verify">VERIFY</span></td><td>審查計劃並檢查完成的工作。</td></tr><tr><td><span class="chip read">READ</span></td><td>研究並收集證據。</td></tr><tr><td><span class="chip mech">HOOKS</span></td><td>機械式檢查；不作判斷。</td></tr>`,
+  "crew.maps":"Claude 角色對照表：<code>~/.claude/sdlc-engines.conf</code>。Codex 角色對照表：<code>~/.codex/sdlc-openai/engines.toml</code>。改動只影響儲存之後分派的工作；已開啟的對話會沿用開始時的模型。升級模型須由你明確提出。",
+  "health.table":`<tr><th>指令</th><th>檢查甚麼</th></tr><tr><td><code>./doctor</code></td><td>已安裝檔案、路由及本機依賴。</td></tr><tr><td><code>./doctor --workspace /path/to/workspace</code></td><td>專案設定和之前運行所保存的結果；不重新運行測試。</td></tr><tr><td><code>./doctor --project /path/to/repo --verify</code></td><td>為一個專案重新運行一次有時間限制的檢查。</td></tr>`,
+  "health.note":"更改設定、升級客戶端或新增專案後使用 doctor。本頁說明流程；即時狀態請用 doctor 查看。安裝這個框架不會啟動任何服務。",
+  "glossary.list":`<dt>關卡（Gate）</dt><dd>工作在這裡停下，直到檢查通過或有人批准。第一道關卡批准計劃；第二道關卡批准發佈。</dd><dt>Hook</dt><dd>AI 工具在特定時刻自動運行的小程式，例如在儲存提交之前。它負責運行檢查，不作判斷。</dd><dt>Spec（規格）</dt><dd>一項改動的書面計劃：需求（要做甚麼）、設計（怎樣做）和任務（步驟）。</dd><dt>REQ-ID</dt><dd>每條需求的短標籤，例如 <code>REQ-LOGIN-001</code>。證明它的測試帶有同一標籤，所以一看就知道哪些已被覆蓋。</dd><dt>Worktree（工作樹）</dt><dd>專案的另一份工作副本，讓 AI 在分支上建造，而不會動到你正在用的那一份。</dd><dt>RCA（根本原因分析）</dt><dd>找出錯誤為何發生、修正原因、加上測試防止它悄悄再出現，並檢查別處有沒有同樣的錯。</dd><dt>角色</dt><dd>judge、build、verify、read：AI 工作被分成的四種職務。每個角色是一份工作，不是固定的模型。</dd><dt>引擎對照表</dt><dd>一個小設定檔，列明每個角色由哪個 AI 模型擔任。你可以修改它；改動只套用於新的工作。</dd>`,
+  "projects.trainers":"培訓導師：用文字編輯器打開本檔案，找到 PROJECTS 清單，複製範例區塊來加入你自己的專案。",
+  "projects.intro":"框架處理共通工作；專案可以加入自己的例行工作。要取得當前專案證據，請執行 <code>./doctor --workspace /path/to/workspace</code>。選取卡片查看本地指令。",
+  "try.kicker":"06 / 下一步","try.title":"親自試一試",
+  "try.body":"README 有一份一小時的培訓練習，你可以在自己的小型專案上一步一步跟著做；另有詞彙表解釋本頁用到的每個詞。",
+  "try.links":'<a class="button primary" href="https://github.com/wlottermonster/ai_native_sdlc#your-first-hour-a-training-walk-through">你的第一小時：培訓練習 <span aria-hidden="true">→</span></a><a class="button secondary" href="https://github.com/wlottermonster/ai_native_sdlc#words-used-here">本頁用語：詞彙表</a>',
+  "footer":"AI-Native SDLC · 培訓指南 · English / 繁中"
+};
+
+const PROJECTS = [
+  {
+    id:"example",
+    name:"Example project",
+    repo:"replace with your repository name",
+    what:"One card per repository: what it is, where it stands, and the routines it adds on top of the standard commands. Edit the PROJECTS list in this file to describe your own projects.",
+    state:"warn", stateText:"Template · replace with your projects",
+    note:"Every repository gets the standard commands. A card lists only what a project adds or redefines.",
+    groups:[
+      { title:"How a project comes on board",
+        cmds:[
+          ["1. Add a contract","Two lines: a <code>check</code> command and a <code>test</code> command. Usually this just wraps whatever the project already runs."],
+          ["2. Time it","The gate gives <code>check</code> ten minutes and refuses the save if it overruns — but you wait for it on every save, so keep it to a couple of minutes and put slow work in <code>test</code>."],
+          ["3. Run one real feature","Take one genuine piece of work through <code>/feature</code> end to end. That's the proof — it's how you see the gates really say no before you trust them."],
+        ]},
+    ],
+    watch:"<b>Worth knowing:</b> setup is separate from certification. A configured check command does not prove live hook enforcement or meaningful test coverage. Run <code>./doctor</code> for evidence.",
+    zh:{
+      name:"範例專案",
+      repo:"換成你的程式庫名稱",
+      what:"每個程式庫一張卡：它是甚麼、目前狀態、以及它在標準指令之上加上的例行工作。編輯本檔案中的 PROJECTS 清單來描述你自己的專案。",
+      stateText:"範本 · 換成你的專案",
+      note:"每個程式庫都有標準指令。卡片只列出專案額外加上或重新定義的部分。",
+      groups:[
+        { title:"一個專案怎樣上車",
+          cmds:[
+            ["1. 加一份契約","兩行：一個 <code>check</code> 指令和一個 <code>test</code> 指令。通常只是包裝專案本來就在運行的東西。"],
+            ["2. 計時","關卡給 <code>check</code> 十分鐘，超時就拒絕儲存——但你每次儲存都要等它，所以請控制在兩三分鐘內，把慢的工作放進 <code>test</code>。"],
+            ["3. 跑一個真實功能","拿一件真正的工作，用 <code>/feature</code> 從頭走到尾。這就是證明——在信任這些關卡之前，你要先親眼看到它們真的會說「不」。"],
+          ]},
+      ],
+      watch:"<b>值得知道：</b>設定完成與認證是兩回事。有檢查指令不代表已證明實際 hook 執行或測試覆蓋。請用 <code>./doctor</code> 取得證據。"
+    }
+  },
+];
+
+
+// ============ language switching ============
+const EN_CACHE = {};                       // key → the English innerHTML, captured on first switch
+let LANG = 'en';
+let openIndex = -1;
+
+function setLang(lang){
+  LANG = lang;
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const k = el.dataset.i18n;
+    if (!(k in EN_CACHE)) EN_CACHE[k] = el.innerHTML;
+    if (lang === 'zh' && ZH[k]) el.innerHTML = ZH[k];
+    else el.innerHTML = EN_CACHE[k];
+  });
+  document.documentElement.lang = lang === 'zh' ? 'zh-Hant' : 'en';
+  document.title = lang === 'zh' ? 'AI-Native SDLC · 培訓指南' : 'AI-Native SDLC · Training guide';
+  document.getElementById('lang-en').setAttribute('aria-pressed', String(lang === 'en'));
+  document.getElementById('lang-zh').setAttribute('aria-pressed', String(lang === 'zh'));
+  renderProjects();
+  if (openIndex >= 0) openPanel(openIndex, true);
+  try { localStorage.setItem('sdlc-manual-lang', lang); } catch (e) {}
+}
+
+// view(p) — the project's fields in the current language; English is the fallback
+// for any field the translation does not carry.
+function view(p){
+  if (LANG !== 'zh' || !p.zh) return p;
+  return Object.assign({}, p, p.zh);
+}
+
+const grid = document.getElementById('projects');
+const panel = document.getElementById('ppanel');
+
+function renderProjects(){
+  grid.innerHTML = '';
+  PROJECTS.forEach((p0, i) => {
+    const p = view(p0);
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'proj-btn';
+    b.setAttribute('aria-expanded', String(openIndex === i));
+    b.dataset.i = i;
+    b.innerHTML = '<span class="pname">' + p.name + '</span>' +
+      '<span class="pwhat">' + p.what + '</span>' +
+      '<span class="pmeta"><span class="chip ' + p.state + '">' + p.stateText + '</span><code>' + p.repo + '</code></span>';
+    b.addEventListener('click', () => openPanel(i));
+    grid.appendChild(b);
+  });
+}
+
+function openPanel(i, quiet){
+  const p = view(PROJECTS[i]);
+  openIndex = i;
+  document.querySelectorAll('.proj-btn').forEach(x =>
+    x.setAttribute('aria-expanded', String(Number(x.dataset.i) === i)));
+  let html = '<button class="close" type="button" id="pclose">' + (LANG === 'zh' ? '關閉' : 'Close') + '</button>' +
+             '<h3>' + p.name + '</h3>' +
+             '<p class="lead">' + p.note + '</p>';
+  p.groups.forEach(g => {
+    html += '<p class="grp">' + g.title + '</p><ul class="cmdlist">';
+    g.cmds.forEach(c => {
+      html += '<li><span class="cmd">' + c[0] + '</span><span class="desc">' + c[1] + '</span></li>';
+    });
+    html += '</ul>';
+  });
+  if (p.extra) html += '<p class="grp">' + (p.extraTitle || '') + '</p>' + p.extra;
+  if (p.watch) html += '<div class="rulebox">' + p.watch + '</div>';
+  panel.innerHTML = html;
+  panel.hidden = false;
+  document.getElementById('pclose').addEventListener('click', closePanel);
+  if (!quiet) panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function closePanel(){
+  const previous = openIndex;
+  openIndex = -1;
+  panel.hidden = true;
+  panel.innerHTML = '';
+  document.querySelectorAll('.proj-btn').forEach(x => x.setAttribute('aria-expanded','false'));
+  if (previous >= 0) grid.querySelector(`[data-i="${previous}"]`)?.focus();
+}
+
+document.getElementById('lang-en').addEventListener('click', () => setLang('en'));
+document.getElementById('lang-zh').addEventListener('click', () => setLang('zh'));
+
+let saved = 'en';
+try { saved = localStorage.getItem('sdlc-manual-lang') || 'en'; } catch (e) {}
+setLang(saved === 'zh' ? 'zh' : 'en');
+</script>
+</body>
+</html>

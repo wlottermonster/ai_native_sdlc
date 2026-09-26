@@ -1,0 +1,80 @@
+{
+  "//": "MERGE every TOP-LEVEL key of this file into ~/.claude/settings.json (worktree is a sibling of hooks, NOT inside it) — never replace existing keys. Keep any PreToolUse entry already there (a delete-confinement guard, say) and ADD the entries below beside it. The worktree key lets fresh worktrees (implementer/verifier isolation) reach their dependencies through symlinks; add whatever directory names your repos use. The SessionStart entry runs session-engines.sh, which announces the active engine map; its matcher limits it to startup, resume and clear — compaction is covered by the PostCompact entry, which re-injects the policy. TIMEOUT BUDGET — the commit gate's timeout of 600 below is the budget a repo's make check must fit inside. A PreToolUse hook that times out does NOT block the tool, so a check that overran used to leave every commit ungated while looking gated, with no error to read. check-gate.sh now closes that hole itself: it reads this timeout from your settings, stops the checks 30 seconds before it, and BLOCKS the commit with a message when they did not finish — a loud refusal in place of a silent allow. dod.sh does the same against the Stop entry's timeout. Raising the number therefore no longer opens a hole; it only means a commit may wait that long. Even so, a check that needs the whole budget belongs in make test — keep check the fast lane. This note lives at the TOP LEVEL and never inside a hook entry: Claude Code does not accept comments in a settings file, unknown-key tolerance inside a hook object is undocumented, and a schema validation error rejects the WHOLE settings file — every hook, permission and setting with it. After merging, run /hooks and confirm the commit gate is listed. Push is deliberately NOT gated here: whether push deploys is a fact about a repo, not about the machine, so a repo where it does adds permissions.ask with Bash(git push*) to its own .claude/settings.json.",
+  "worktree": {
+    "symlinkDirectories": [
+      ".venv",
+      "venv",
+      "node_modules"
+    ],
+    "baseRef": "head"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.claude/hooks/session-engines.sh\"",
+            "timeout": 10,
+            "statusMessage": "Engine map"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.claude/hooks/check-gate.sh\"",
+            "timeout": 600,
+            "statusMessage": "Commit gate"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.claude/hooks/autofix.sh\"",
+            "async": true,
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.claude/hooks/dod.sh\"",
+            "timeout": 600,
+            "statusMessage": "Definition-of-done check"
+          },
+          {
+            "type": "command",
+            "command": "\"$HOME/.claude/hooks/req-gate.sh\" --stop",
+            "timeout": 60,
+            "statusMessage": "Requirement coverage check"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -Rs '{hookSpecificOutput:{hookEventName:\"PostCompact\",additionalContext:.}}' \"$HOME/.claude/sdlc-policy.md\""
+          }
+        ]
+      }
+    ]
+  }
+}

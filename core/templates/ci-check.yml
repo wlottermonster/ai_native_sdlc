@@ -1,0 +1,46 @@
+# AI-Native SDLC repo contract — the CI mirror.
+#
+# Copy into a repo as `.github/workflows/check.yml`. Without it the gates run on
+# one machine only (the Claude hooks plus the optional pre-commit hook), so a
+# push that skipped a local gate — a bypassed hook, a hook that timed out, a
+# commit made from somewhere else — has nothing behind it. This is that
+# something: one file, the same `make check` the local gate calls.
+#
+# It runs `check` and deliberately NOT `test`. `check` is the fast lane every
+# repo already contracts to provide, and it must stay inside the commit gate's
+# timeout budget anyway, so it is the one target that is safe to run on every
+# push. `test` is where the long runs live, and where a suite that needs
+# credentials lives: such a suite stays out of CI and is run
+# by hand before a deploy. A CI job that needs secrets is a job people turn
+# off — and a job people turn off gates nothing while looking like it does.
+#
+# Adjust the setup steps to the repo's toolchain (install dependencies, build a
+# venv, restore a cache). Keep the target name: the framework only ever calls
+# `make check` and `make test`.
+
+name: check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Add the repo's toolchain setup here, before the gate runs. Examples:
+      #   - uses: actions/setup-node@v4
+      #     with: { node-version: lts/*, cache: npm }
+      #   - run: npm ci
+      #
+      #   - uses: actions/setup-python@v5
+      #     with: { python-version: '3.x' }
+      #   - run: python -m venv .venv && .venv/bin/pip install -r requirements.txt
+
+      - name: gate
+        run: make check

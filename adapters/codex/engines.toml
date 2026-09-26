@@ -1,0 +1,27 @@
+# Owner-controlled native agent assignments. Installer preserves existing maps.
+# The running main session stays host-selected. No silent model fallback.
+# Escalation may be dispatched only at the owner's explicit request.
+[roles]
+judge = "gpt-6-astra"
+build = "gpt-5.6-sol"
+verify = "gpt-5.6-sol"
+read = "gpt-5.6-terra"
+escalate = "gpt-6-astra"
+
+[reasoning]
+judge = "high"
+build = "high"
+verify = "high"
+read = "medium"
+escalate = "xhigh"
+
+[agents]
+planner = "judge"
+implementer = "build"
+spec-reviewer = "verify"
+verifier = "verify"
+test-auditor = "verify"
+evidence = "read"
+researcher = "read"
+ui-tester = "build"
+escalation = "escalate"

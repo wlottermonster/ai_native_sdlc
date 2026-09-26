@@ -1,0 +1,34 @@
+#!/bin/sh
+# AI-Native SDLC — plain git pre-commit mirror of the Claude commit gate.
+# Install per repo:  cp templates/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+# Ensures even manual (non-Claude) commits pass the same contract.
+# Note: on commits made BY Claude, checks then run twice (the Claude-side gate
+# plus this hook) — harmless but slower. Install this mirror in repos where you
+# also commit manually; skip it where only Claude commits.
+# Installation enrolls this repository: absence is a failure, not an opt-out.
+if [ ! -r Makefile ]; then
+  echo "pre-commit: readable Makefile required — commit blocked." >&2
+  exit 1
+fi
+# Git exports repository selectors to hooks. Tests may create other repositories.
+# Use Git's own list so fixture commands cannot alter the committing repository,
+# but never lose this repository: a gate that cannot find it must not run against
+# nothing. Resolve the repository first, drop the selectors, and if the work tree
+# no longer leads back here (a detached git directory), re-export the resolved
+# absolute selectors so make check still sees exactly this repository.
+git_top=$(git rev-parse --show-toplevel 2>/dev/null) || git_top=
+git_dir=$(git rev-parse --absolute-git-dir 2>/dev/null) || git_dir=
+git_scope_vars=$(git rev-parse --local-env-vars) || exit 1
+for git_scope_var in $git_scope_vars; do
+  unset "$git_scope_var"
+done
+if [ -n "$git_top" ] && [ "$(git rev-parse --show-toplevel 2>/dev/null)" != "$git_top" ]; then
+  GIT_DIR=$git_dir
+  GIT_WORK_TREE=$git_top
+  export GIT_DIR GIT_WORK_TREE
+fi
+make check || {
+  echo "pre-commit: 'make check' failed — commit blocked." >&2
+  exit 1
+}
+exit 0

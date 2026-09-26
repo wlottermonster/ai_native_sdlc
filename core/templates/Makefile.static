@@ -1,0 +1,22 @@
+# AI-Native SDLC repo contract — static website template (static-site repos).
+# Minimal gate: the site must validate. Adjust to the repo's tooling.
+# Keep the target names. Note: if htmlhint is installed, its failure FAILS the
+# gate (a check that cannot fail cannot be trusted).
+TEST_PROFILE = static
+
+# TIMEOUT BUDGET: the commit gate runs `check` as a PreToolUse hook with a 600s
+# timeout, and a hook that times out does NOT block — a `check` that overran
+# used to leave every commit ungated while looking gated. The gate now
+# stops the checks 30s before that timeout and blocks the commit instead.
+# Keep `check` inside 600s; if it cannot fit, split the slow work into `test`
+# rather than raising the timeout.
+check:  ## fast gate: HTML validity if tools available
+	@if command -v npx >/dev/null 2>&1 && npx --no-install htmlhint --version >/dev/null 2>&1; then \
+		npx --no-install htmlhint "**/*.html"; \
+	else \
+		echo "htmlhint not installed - static check skipped"; \
+	fi
+
+test: check
+
+.PHONY: check test
