@@ -71,7 +71,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -Rs '{hookSpecificOutput:{hookEventName:\"PostCompact\",additionalContext:.}}' \"$HOME/.claude/sdlc-policy.md\""
+            "command": "\"$HOME/.claude/hooks/postcompact-policy.sh\"",
+            "timeout": 10,
+            "statusMessage": "Routing policy"
           }
         ]
       }

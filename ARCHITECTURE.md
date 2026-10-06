@@ -58,6 +58,7 @@ advisory. They are shell scripts registered in the client's settings
 | `req-gate.sh` | Stop (`--stop`) and inside `make check` | Gate A: every non-deferred REQ-ID in `requirements.md` appears in `tasks.md`. Gate B, only when `tasks.md` has no unchecked box: every REQ-ID appears in at least one test file. | ~120 lines |
 | `autofix.sh` | PostToolUse on Edit/Write, async | Runs a formatter on the touched file if the repo has one. Never blocks. | ~25 lines |
 | `session-engines.sh` | SessionStart | Emits the active engine map as context so the session states which model fills which role. Never blocks. | ~115 lines |
+| `postcompact-policy.sh` | PostCompact | Re-injects the routing section of the policy after compaction, the whole file if the heading is missing, and says so when the file is absent. Never blocks. | ~45 lines |
 
 Two things to notice in `check-gate.sh`:
 
@@ -68,7 +69,7 @@ Two things to notice in `check-gate.sh`:
   repository created by a test cannot redirect the gate at the committing repo,
   and then re-exports absolute selectors when the work tree no longer leads back.
 
-A PostCompact entry re-injects `sdlc-policy.md` after the client compacts the
+A PostCompact entry (`postcompact-policy.sh`) re-injects the routing section of `sdlc-policy.md` after the client compacts the
 conversation, so the routing policy survives context loss.
 
 ## 4. Requirements as the spine
