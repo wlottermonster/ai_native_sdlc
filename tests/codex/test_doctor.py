@@ -428,6 +428,78 @@ class DoctorTests(unittest.TestCase):
         self.write_settings(['not', 'an', 'object'])
         self.assertEqual(self.run_doctor(doctor)['installations']['claude']['hooks']['status'], 'settings-invalid')
 
+    # REQ-MOD-026: the engine-map mod ships as a folder under adapters/claude/skills,
+    # so the receipt's existing managed-file check is what must name its files.
+    # The fixture supplies its own plugin-shaped folder; the real one is not assumed.
+    def install_mod_fixture(self):
+        """A source checkout carrying the mod folder, installed into the fake home the way
+        install.sh does it: --install-skills, then the receipt from claude_manifest."""
+        from installation import claude_manifest, install_claude_skills, write_manifest
+        source = self.root / 'source'
+        mod = source / 'adapters/claude/skills/sdlc-engine-map'
+        files = {'.claude-plugin/plugin.json': '{"name": "sdlc-engine-map"}\n',
+                 'hooks/hooks.json': '{"hooks": {}}\n',
+                 'hooks/register.ts': 'export default function register() {}\n'}
+        for name, text in files.items():
+            (mod / name).parent.mkdir(parents=True, exist_ok=True)
+            (mod / name).write_text(text)
+        (source / 'install.sh').write_text('#!/bin/sh\n')
+        (source / 'settings').mkdir()
+        (source / 'settings/hooks-snippet.json').write_bytes((ROOT / 'settings/hooks-snippet.json').read_bytes())
+        # The skills install path refuses without its exclusion list (REQ-MOD-025).
+        (source / 'adapters/claude/skill-exclusions.txt').write_bytes(
+            (ROOT / 'adapters/claude/skill-exclusions.txt').read_bytes())
+        runtime = self.home / '.claude'
+        copies = [('sdlc-policy.md', 'sdlc-policy.md'), ('core/handoff.py', 'scripts/handoff.py'),
+                  ('core/handoff_store.py', 'scripts/handoff_store.py'),
+                  ('core/handoff_runtime.py', 'scripts/handoff_runtime.py'),
+                  ('core/project.py', 'scripts/project.py'), ('core/doctor.py', 'scripts/doctor.py'),
+                  ('adapters/codex/scripts/routing.py', 'scripts/routing.py'),
+                  ('core/installation.py', 'scripts/installation.py'),
+                  ('core/templates/pre-commit', 'templates/pre-commit')]
+        for src, dst in copies:
+            for path in (source / src, runtime / dst):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('# fixture ' + src + '\n')
+        install_claude_skills(source, runtime)
+        write_manifest(runtime / 'doctor-installation.json', claude_manifest(source, runtime))
+        self.write_settings(self.merged_settings())
+        return runtime / 'skills/sdlc-engine-map/hooks/register.ts'
+
+    def claude_row(self, doctor):
+        """Only the installation inspection is real; clients, tools and routing read healthy."""
+        with patch.object(doctor, 'client_inventory', return_value={x: {'status': 'available'} for x in ('codex', 'claude')}), \
+                patch.object(doctor, 'dependency_inventory', return_value={}), \
+                patch.object(doctor, 'inspect_routing', return_value={'status': 'current', 'issues': [], 'live_selection': 'unverified'}):
+            return doctor.doctor(self.home)['installations']['claude']
+
+    def test_intact_mod_reads_current_REQ_MOD_026(self):
+        """REQ-MOD-026: the mod's files are in the receipt, and intact they raise no issue."""
+        doctor = module()
+        register = self.install_mod_fixture()
+        receipt = json.loads((self.home / '.claude/doctor-installation.json').read_text())
+        self.assertIn(str(register), receipt['managed_files'])
+        row = self.claude_row(doctor)
+        self.assertEqual(row['status'], 'current', row['issues'])
+        self.assertNotIn('skills/sdlc-engine-map', ' '.join(row['issues']))
+
+    def test_missing_or_changed_mod_file_is_named_REQ_MOD_026(self):
+        """REQ-MOD-026: deleting or editing an installed mod file makes the claude row not
+        current, and its issue names the path under skills/sdlc-engine-map."""
+        doctor = module()
+        register = self.install_mod_fixture()
+        original = register.read_bytes()
+        for label, damage in (('missing', register.unlink),
+                              ('changed', lambda: register.write_text('// edited by hand\n'))):
+            with self.subTest(damage=label):
+                damage()
+                row = self.claude_row(doctor)
+                self.assertNotEqual(row['status'], 'current')
+                named = [i for i in row['issues'] if 'skills/sdlc-engine-map' in i]
+                self.assertEqual(named, ['Managed file missing or changed: ' + str(register)])
+                register.write_bytes(original)
+        self.assertEqual(self.claude_row(doctor)['status'], 'current')
+
     def test_empty_workspace_is_nothing_inspected_REQ_DOCTOR_003(self):
         """REQ-DOCTOR-003: a workspace holding no repository inspected nothing; all([]) is not a pass."""
         doctor = module()

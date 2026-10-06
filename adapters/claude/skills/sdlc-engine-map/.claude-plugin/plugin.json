@@ -1,0 +1,6 @@
+{
+  "name": "sdlc-engine-map",
+  "version": "0.1.0",
+  "description": "Routes each subagent dispatch by the engine map at the moment it is dispatched.",
+  "types": "./types/index.d.ts"
+}

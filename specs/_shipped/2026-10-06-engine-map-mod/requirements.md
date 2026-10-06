@@ -19,10 +19,11 @@
      Tiers. Behaviour of the hooks module is `verify: unit`, proved by the
      mod's own *.test.ts files run through `claude plugin test` with the
      engine mocked beneath them. Installer, gate and doctor behaviour is
-     `verify: integration`, proved in a throwaway HOME. Three requirements are
-     `deferred`: they depend on a shape of the live engine that only the T0
-     probe can record, and they are rewritten from that record, never from a
-     guess. Requirement bodies carry no other requirement's ID.
+     `verify: integration`, proved in a throwaway HOME. One requirement is
+     `deferred` (REQ-MOD-012): it depends on a shape of the live engine that
+     only the T0 probe can record, and the requirements it informs are
+     rewritten from that record, never from a guess. Requirement bodies carry
+     no other requirement's ID.
 
      No model name appears in this spec, the mod, its tests or the documents
      it touches: roles and fixture names only. TEST_PROFILE = lib. -->
@@ -67,8 +68,9 @@ REQ-MOD-005  WHEN `register` is called, IT SHALL wrap each registration so
              verify: unit
 
 REQ-MOD-006  THE MOD SHALL register hooks on exactly the events `agent.spawn`,
-             `session.start` and `turn.start` and on no other, as the hook
-             report of `claude plugin validate` lists them, compared as a set.
+             `session.start`, `turn.start` and `turn.complete` and on no
+             other, as the hook report of `claude plugin validate` lists them,
+             compared as a set.
              verify: integration
 
 REQ-MOD-007  WHEN `agent.spawn` fires for a `subagentType` that is bound, has
@@ -96,13 +98,17 @@ REQ-MOD-010  WHEN the map or a manifest is missing, or would be refused by
              is one. It never routes the valid lines of a refused file.
              verify: unit
 
-REQ-MOD-011  WHEN a subagent the mod routed ends with an error the engine
-             attributes to the model being unavailable, THE MOD SHALL route
-             every LATER dispatch of that role to the next entry of its chain
-             for the rest of the process, in order and no further than the
-             list goes, and SHALL say so once per role; the failed dispatch
-             itself is not retried.
-             verify: deferred
+REQ-MOD-011  WHEN `turn.complete` fires with `reason: "error"` for an
+             `agentId` the mod routed, THE MOD SHALL make one classification
+             call on that entry (`$.model.complete`, one token, bounded) and,
+             only when that call reports the model unavailable (status 404 or
+             an error kind naming the model), SHALL route every LATER dispatch
+             of that role to the next entry of its chain for the rest of the
+             process, in order and no further than the list goes, saying so
+             once per role and entry moved; any other failure leaves the chain
+             where it is,
+             and the failed dispatch itself is never retried.
+             verify: unit
 
 REQ-MOD-012  WHEN a subagent is dispatched on the live engine with a model id
              that does not exist, THE RECORDED PROBE SHALL show where the
@@ -111,11 +117,11 @@ REQ-MOD-012  WHEN a subagent is dispatched on the live engine with a model id
              requirement above is written against the real shape.
              verify: deferred
 
-REQ-MOD-013  WHEN every entry of a role's chain has failed in this process,
-             THE MOD SHALL route later dispatches of that role with no model
-             of its own (the frontmatter decides) and SHALL say once which
-             role and how many entries were tried.
-             verify: deferred
+REQ-MOD-013  WHEN every entry of a role's chain has been classified
+             unavailable in this process, THE MOD SHALL route later dispatches
+             of that role with no model of its own (the frontmatter decides)
+             and SHALL say once which role and how many entries were tried.
+             verify: unit
 
 REQ-MOD-014  WHEN a dispatch is routed, THE MOD SHALL read the map and the
              manifests from disk at that dispatch, holding no copy across
@@ -166,9 +172,10 @@ REQ-MOD-019  WHEN `<session root>/.claude/agents/roles.conf` exists, THE MOD
              verify: unit
 
 REQ-MOD-020  WHEN the environment variable `CLAUDE_CODE_SUBAGENT_MODEL` is
-             set, THE MOD SHALL say once per process that subagent routing is
-             overridden by that variable and SHALL still set the model it
-             would have set, so the override is visible even if it wins.
+             set, THE MOD SHALL say once per process that the variable is set,
+             that the map still decides the dispatches the mod routes (a
+             hook-set model outranks the variable on this build), and that the
+             variable governs only the dispatches the mod leaves alone.
              verify: unit
 
 REQ-MOD-021  WHEN `agent.spawn` is routed, THE MOD SHALL call `next` at most
@@ -232,8 +239,8 @@ REQ-MOD-029  WHEN the mod's test files are read, every test title SHALL match
              `REQ-MOD-[0-9]{3}`, checked by tests/test_mod.sh.
              verify: integration
 
-REQ-MOD-030  WHEN the engine refuses a registration on the live build, THE
-             RECORDED PROBE SHALL show whether `on()` throws or the module
-             fails to load, so the refusal handling above is written against
-             the real shape.
-             verify: deferred
+REQ-MOD-030  WHEN a copy of the module names an event this build does not
+             have, `claude plugin validate` SHALL fail naming that event, and
+             tests/test_mod.sh SHALL prove it on such a copy, so an API drift
+             is caught at the gate before any session loads the mod.
+             verify: integration

@@ -27,6 +27,7 @@ check:
 	  for f in $(SHELL_SOURCES); do [ -f "$$f" ] && files="$$files $$f"; done; \
 	  if [ -n "$$files" ]; then shellcheck -x $$files || exit 1; fi
 	@jq -e . settings/hooks-snippet.json >/dev/null
+	@bash scripts/mod-check.sh validate
 	@gate="hooks/req-gate.sh"; \
 	  [ -f "$$gate" ] || gate="$$HOME/.claude/hooks/req-gate.sh"; \
 	  [ -f "$$gate" ] || { \

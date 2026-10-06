@@ -218,6 +218,14 @@ further than the list goes.
   map is the single binding, so a project-level pin would fork the routing
   invisibly. Change the map instead.
 
+When the map takes effect depends on the engine-map mod, installed under
+`~/.claude/skills/sdlc-engine-map/`. The mod reads the map at each subagent
+dispatch, so with the mod loaded, a change to the map applies at the next dispatch
+for a role-bound subagent dispatched without a model of its own. Without it (a `--bare` session, a refused load) the agents' frontmatter is the
+binding, and `~/.claude/scripts/apply-engines.sh` must be re-run after every edit
+to the map. The mod is routing, not enforcement: it sets the model of a dispatch,
+shows the map on the status line and says each notice once; it never blocks.
+
 | Phase | Who | Role |
 |---|---|---|
 | Architecture / spec / design | main session | judge |

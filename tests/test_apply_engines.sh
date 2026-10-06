@@ -47,6 +47,14 @@
 #                   the installed one binding an agent to a DIFFERENT role so
 #                   the winner is visible in the model that gets written.
 #
+# ...and the SHARED FIXTURE SET:
+#   REQ-MOD-015     every case in tests/fixtures/engine-map/ run through the
+#                   script reaches the verdict its `.expected` file records
+#                   (accept plus the agent-to-first-entry table, or refuse with
+#                   the file and line of each fault). The engine-map mod's
+#                   parser is held to the same files through the TypeScript
+#                   mirror of the set, which must equal a fresh rendering of it.
+#
 # Every run points HOME at a fresh mktemp -d and installs a fixture copy of the
 # repo's agents into it: no assertion here reads or writes the real
 # $HOME/.claude, and the whole tree is removed by the EXIT trap.
@@ -56,6 +64,9 @@ here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=lib.sh
 . "$here/lib.sh"
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=engine_map_cases.sh
+. "$here/engine_map_cases.sh"
 
 tmproot=$(mktemp -d "${TMPDIR:-/tmp}/sdlc-apply-engines.XXXXXX")
 # Normalised through `cd`+`pwd`: a $TMPDIR with a trailing slash makes mktemp
@@ -870,5 +881,54 @@ assert_rc 0 "$out"
 assert_model "$h/.claude/agents/implementer.md" "probe-build-1"
 assert_grep '^changed implementer: model: opus -> probe-build-1 \(role build\)$' "$out"
 assert_model "$h/.claude/agents/researcher.md" "probe-read-1"
+
+
+# ---------------------------------------------------------------------------
+req "REQ-MOD-015"
+# The fixture set is the one grammar both parsers answer to. Each case's
+# `.expected` was written by running THIS script on it (engine_map_cases.sh
+# --write), so a change to the script's grammar shows up here as a case whose
+# verdict moved, and the mod's tests read the same cases through the mirror.
+cases_dir="$TEST_REPO/tests/fixtures/engine-map"
+
+# Every grammar point the requirement names has its case: deleting one is a
+# failure here, not a quietly smaller set. The names are the one list
+# engine_map_cases.sh holds (and writes into the mod's mirror); the count of
+# cases run must equal it, so a case added without a name fails too.
+nrequired=0
+for c in ${ENGINE_MAP_REQUIRED:-}; do
+  nrequired=$((nrequired + 1))
+  assert_file "$cases_dir/$c.map.conf"
+  assert_file "$cases_dir/$c.roles.conf"
+  assert_file "$cases_dir/$c.expected"
+done
+
+ncases=0
+for m in "$cases_dir"/*.map.conf; do
+  [ -f "$m" ] || continue
+  c=$(basename "$m" .map.conf)
+  ncases=$((ncases + 1))
+  got="$tmproot/case-$c.verdict"
+  engine_map_verdict "$cases_dir" "$c" "$tmproot" > "$got"
+  if cmp -s "$cases_dir/$c.expected" "$got"; then
+    _test_pass "case $c: $(head -n 1 "$got")"
+  else
+    _test_fail "case $c: expected [$(tr '\n' ';' < "$cases_dir/$c.expected")] got [$(tr '\n' ';' < "$got")]"
+  fi
+done
+if [ "$nrequired" -gt 0 ]; then
+  _test_pass "$nrequired required case names read from engine_map_cases.sh"
+else
+  _test_fail "no required case names in engine_map_cases.sh: an empty list is not a pass"
+fi
+assert_str "$nrequired" "$ncases" "fixture cases run"
+
+# The mod's tests cannot read the disk (the plugin test kit gives a hook's
+# file system no implementation), so they read the set through a TypeScript
+# mirror. A mirror that is not a fresh rendering of these files is a second
+# fixture set, and that is a failure.
+mirror="$tmproot/fixtures.ts"
+engine_map_ts_mirror "$cases_dir" > "$mirror"
+assert_bytes "$mirror" "$TEST_REPO/$ENGINE_MAP_MIRROR"
 
 finish

@@ -72,6 +72,46 @@ Two things to notice in `check-gate.sh`:
 A PostCompact entry (`postcompact-policy.sh`) re-injects the routing section of `sdlc-policy.md` after the client compacts the
 conversation, so the routing policy survives context loss.
 
+### Routing, not enforcement: the engine-map mod
+
+Not every hook is a gate. The engine-map mod is a Claude Code plugin of function
+hooks, kept in `adapters/claude/skills/sdlc-engine-map/` and installed to
+`~/.claude/skills/sdlc-engine-map/`, where the client loads it from the skills
+folder with no edit to the settings. It routes and informs; it never blocks, and
+it is deliberately kept out of the table above:
+
+- **Dispatch routing** (`agent.spawn`): when an agent bound to a role is
+  dispatched without a model of its own, the mod reads the map at that moment and
+  sets the role's entry in force, so a change to the map applies at the next
+  dispatch for a role-bound subagent dispatched without a model of its own. When a
+  routed subagent fails on an unavailable model
+  (`turn.complete`), later dispatches of that role move down its fallback chain.
+- **Status line** (`session.start`, `turn.start`): one line carrying the active
+  map, the entry in force for any role that has moved down its chain, and a flag
+  when the session's own model is not the judge entry.
+- **One-time notices**: a bypassed map, a refused map, an exhausted chain or a
+  hook failure is said once, the set of messages already shown kept in the
+  session state.
+
+It fails open by design: a hook that throws or overruns announces the failure and
+lets the dispatch proceed un-routed (a failure after the hook has already passed the
+event on leaves the settled result standing), so the agent's frontmatter, written by
+`scripts/apply-engines.sh`, decides, as it does in any session where the mod is
+not loaded. That is acceptable only because the mod is routing; the gates above
+stay shell hooks that refuse when they cannot verify. Two limits are stated
+rather than promised away: the mod cannot rescue the dispatch that fails (a spawn
+resolves before its model is first called, so only later dispatches fall back),
+and the doctor cannot see a mod that is installed but not loaded (a `--bare`
+session, a refused load), which is why the frontmatter stays the binding.
+
+Files: `.claude-plugin/plugin.json`, `hooks/hooks.json`, `hooks/register.ts` (the
+registrations and their `.catch` handlers), `hooks/routing.ts`, `hooks/chain.ts`,
+`hooks/status.ts`, `hooks/notices.ts`, `hooks/safety.ts` and `hooks/map.ts` (the
+map parser), each with its `*.test.ts`. `scripts/mod-check.sh` runs `claude plugin
+validate` for `make check` and `claude plugin test` for `make test`, failing
+without `claude` unless `SDLC_SKIP_CLAUDE_MOD=1` says so; `tests/test_mod.sh`
+runs the suite and checks every test title carries a REQ-ID.
+
 ## 4. Requirements as the spine
 
 `templates/specs/requirements.md` shows the shape: EARS-style statements ("WHEN
@@ -100,7 +140,8 @@ scripts/apply-engines.sh       rewrites each installed agent's model: line
 The roles are `judge` (the main session), `build`, `verify`, `read`, and
 `escalate` (a lever the owner pulls by name, never automatic). Changing the model
 the framework runs on is editing the map and re-running the
-script. No prompt, document or agent names a model, and `tests/test_docs_roles.sh`
+script; with the engine-map mod loaded (section 3) the edit alone applies at the
+next dispatch for a role-bound subagent dispatched without a model of its own. No prompt, document or agent names a model, and `tests/test_docs_roles.sh`
 fails if one does.
 
 `adapters/codex/engines.toml` is the same idea for Codex, with a reasoning-effort

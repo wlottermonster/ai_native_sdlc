@@ -130,7 +130,10 @@ Agents are bound to **roles**, never to models. There are five roles: four worki
 and auditors) and `read` (bulk reading), plus the `escalate` lever (pulled by name, never
 an automatic route). One machine-level file, the engine map, binds each role to a model
 with an ordered fallback chain. Change the map and every agent follows;
-no one edits a model name by hand: the map writes each agent's model line.
+no one edits a model name by hand: the map writes each agent's model line. And
+with the engine-map mod loaded, a map change applies at the next dispatch for a
+role-bound subagent dispatched without a model of its own, with no re-run of the
+apply step.
 
 ### Two harnesses, one policy
 
@@ -222,6 +225,9 @@ client has loaded or trusted a hook; live hook behaviour is reported separately.
     core/                   harness-neutral policy, workflows, templates and the Python
                             doctor / handoff / project runtimes
     adapters/claude/        the Claude Code adapter (the root links below point here)
+      skills/sdlc-engine-map/ the engine-map mod: function hooks that read the engine map at
+                              each subagent dispatch and show it on the status line;
+                              routing, not enforcement, so it never blocks
     adapters/codex/         the Codex adapter: skills, agents, engines and runtime
     agents/                 job descriptions, one per AI worker (each bound to a role, never
                             to a model — `roles.conf` says which role, the engine map says
@@ -248,6 +254,8 @@ client has loaded or trusted a hook; live hook behaviour is reported separately.
     scripts/
       trace-matrix.sh         generates specs/<feature>/matrix.html (red = uncovered requirement)
       apply-engines.sh        rewrites each installed agent's `model:` line from the engine map
+      mod-check.sh            runs `claude plugin validate` / `claude plugin test` on the
+                              engine-map mod for make check / make test
       check-command-refs.sh   proves every `/name` a repo's CLAUDE.md and command files cite
                               still exists (project, installed, built-in, or vouched for)
       merge-settings.sh       prints ~/.claude/settings.json with the hooks snippet merged in;
@@ -371,6 +379,12 @@ safety hooks. Its commit hook gives `make check` 870 seconds inside the host's 9
 deadline; timeout, failure or a missing Makefile denies the commit. Restart the host after
 installation so changed hook settings load.
 
+With `claude` on PATH, `make check` runs `claude plugin validate` on the Claude engine-map
+mod and `make test` runs its `claude plugin test` suite. A Codex-only checkout without
+`claude` fails both targets with one line saying the mod checks did not run; set
+`SDLC_SKIP_CLAUDE_MOD=1` to skip them explicitly. The same line is still printed, and
+the skip never silences a check that did run.
+
 Installers record source provenance and hashes in `doctor-installation.json`; doctor
 compares the installer-owned fragment of shared files (`config.toml`, `hooks.json`,
 `AGENTS.md`), so an owner's own edits elsewhere in them are not reported as drift.
@@ -455,8 +469,9 @@ framework source under `~/.local/state/ainative-sdlc/backup-staging` (or
 
 ```sh
 make check      # bash -n + shellcheck over every script, jq over the hooks snippet,
-                # the requirement gate, Python validation and the Python test suite
-make test       # every tests/test_*.sh plus tests/codex
+                # the requirement gate, Python validation and the Python test suite,
+                # and validates the mod
+make test       # every tests/test_*.sh plus tests/codex, and the mod's own tests
 ```
 
 `sdlc-policy.md` is generated: after editing `core/policy.md` or `adapters/claude/policy.md`,

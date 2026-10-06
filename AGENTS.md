@@ -78,6 +78,20 @@ protected paths: specs/_shipped/**, specs/_hunt/**
   the index as it stands — a whitelist, because a list of staging forms to
   refuse is one spelling short of the next bypass.
 
+- **A mod routes and informs; it never gates.** A function hook past its
+  budget is treated as absent and the action proceeds, the same fail-open as a
+  timed-out shell hook, so the engine-map mod sets models and status lines and
+  the commit, Stop and requirement gates stay shell hooks. Every mod hook
+  carries a `.catch` that announces and passes the event on; a `.catch` is
+  accepted only as an inline literal, so its logic lives in a pure function.
+- **A fallback that retries a spawn starts a second subagent.** A spawn resolves
+  as soon as the subagent starts and its model failure surfaces at the
+  subagent's turn end, so the mod moves LATER dispatches of a role down the
+  chain, by entry name kept in session state, and never retries the failing one.
+- **A merge does not pass the commit gate.** Landing two green task branches
+  produced a red feature branch once (one task's fixture lacked a file the
+  other task's installer now requires). Run `make check` on the assembled
+  branch after every landing, not only at the end.
 - **A repo never carries its own engine map.** The map is machine-level and the
   one binding from role to model; a per-repo copy is the second binding the
   framework exists to prevent. Only the agents directory travels with a repo.

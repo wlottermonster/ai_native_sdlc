@@ -9,3 +9,9 @@ __pycache__/
 
 # Local run state is retained on disk, never published.
 .sdlc-openai/
+
+# Files the engine lays beside a loaded mod (REQ-MOD-025); the installer skips
+# the same names.
+adapters/claude/skills/*/.claude-plugin/types/
+adapters/claude/skills/*/tsconfig.json
+adapters/claude/skills/*/node_modules/

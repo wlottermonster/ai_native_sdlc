@@ -1,0 +1,7 @@
+# Path components the skills install path never copies and never hashes:
+# files the engine or the OS lays beside a loaded mod. One entry per line;
+# an entry with a slash matches that run of consecutive path components.
+.DS_Store
+tsconfig.json
+node_modules
+.claude-plugin/types

@@ -1,8 +1,10 @@
 """REQ-DOCTOR-002: provenance and managed hashes without configuration contents."""
 import importlib.util
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -139,3 +141,62 @@ class InstallationReceiptTests(unittest.TestCase):
             before=mod.source_snapshot(root)['fingerprint']
             (root/'install.sh').chmod(0o755)
             self.assertNotEqual(before,mod.source_snapshot(root)['fingerprint'])
+
+
+class SkillWalkTests(unittest.TestCase):
+    """REQ-MOD-025: the skills install path prunes excluded trees while it walks."""
+
+    def module(self):
+        spec = importlib.util.spec_from_file_location('installation_walk', ROOT/'core/installation.py')
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def source(self, root):
+        (root/'core').mkdir()
+        (root/'core/tool.py').write_text('one')
+        (root/'install.sh').write_text('true')
+        claude = root/'adapters/claude'
+        claude.mkdir(parents=True)
+        (claude/'skill-exclusions.txt').write_bytes((ROOT/'adapters/claude/skill-exclusions.txt').read_bytes())
+        mod = claude/'skills/sdlc-engine-map'
+        (mod/'.claude-plugin').mkdir(parents=True)
+        (mod/'hooks').mkdir()
+        (mod/'.claude-plugin/plugin.json').write_text('{}')
+        (mod/'hooks/register.ts').write_text('export {}')
+        # A large tree the engine lays beside a loaded mod: many directories deep.
+        for i in range(30):
+            deep = mod/'node_modules'/f'pkg{i}'/'lib'/'dist'
+            deep.mkdir(parents=True)
+            (deep/'index.js').write_text('1')
+        (mod/'.claude-plugin/types/claude-code').mkdir(parents=True)
+        (mod/'.claude-plugin/types/claude-code/index.d.ts').write_text('export {}')
+        return mod
+
+    def test_REQ_MOD_025_excluded_trees_are_pruned_not_walked(self):
+        mod = self.module()
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d).resolve()
+            self.source(root)
+            runtime = root/'runtime'
+            runtime.mkdir()
+            visited = []
+            real = os.scandir
+
+            def counting(path='.'):
+                visited.append(str(path))
+                return real(path)
+
+            with patch.object(os, 'scandir', counting):
+                files = mod.source_files(root)
+                writes = mod.claude_skill_writes(root, runtime)
+
+            skill = 'adapters/claude/skills/sdlc-engine-map/'
+            self.assertIn(skill + '.claude-plugin/plugin.json', files)
+            self.assertIn(skill + 'hooks/register.ts', files)
+            self.assertFalse([k for k in files if 'node_modules' in k or '/types/' in k])
+            self.assertEqual(sorted(str(p.relative_to(runtime)) for p in writes),
+                             ['skills/sdlc-engine-map/.claude-plugin/plugin.json',
+                              'skills/sdlc-engine-map/hooks/register.ts'])
+            self.assertTrue(visited, 'the walk must go through os.scandir for this test to mean anything')
+            self.assertEqual([p for p in visited if 'node_modules' in p or '.claude-plugin/types' in p], [])

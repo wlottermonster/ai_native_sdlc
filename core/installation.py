@@ -47,14 +47,59 @@ def managed_fragment(kind, data):
     raise ValueError('Unknown managed fragment kind: ' + str(kind))
 
 
+SKILLS_DIR = 'adapters/claude/skills'
+# The adapter names the files its engine lays beside a loaded skill; core only
+# applies the list, so the names stay in the adapter.
+SKILL_EXCLUSIONS = 'adapters/claude/skill-exclusions.txt'
+
+
+def skill_exclusions(source):
+    """Excluded path-component runs; a skills folder without its list cannot be filtered."""
+    path = Path(source) / SKILL_EXCLUSIONS
+    if not (Path(source) / SKILLS_DIR).is_dir():
+        return ()
+    try:
+        lines = path.read_text().splitlines()
+    except OSError as error:
+        raise ValueError('Skill exclusion list is unavailable: ' + str(path)) from error
+    return tuple(tuple(line.strip().split('/')) for line in lines
+                 if line.strip() and not line.strip().startswith('#'))
+
+
+def skipped_skill_file(path, root, exclusions):
+    """True when a file under the skills root matches an excluded component run."""
+    try:
+        parts = Path(path).relative_to(root).parts
+    except ValueError:
+        return False
+    return any(parts[i:i + len(run)] == run
+               for run in exclusions for i in range(len(parts) - len(run) + 1))
+
+
+def walk_files(top, root, exclusions):
+    """Every file under `top`, never descending into an excluded directory.
+
+    The same verdicts as filtering a full rglob afterwards (symlinked
+    directories are listed, not followed), but a tree the engine lays beside a
+    loaded mod, such as node_modules, is never enumerated.
+    """
+    found = []
+    for dirpath, dirnames, filenames in os.walk(top):
+        here = Path(dirpath)
+        dirnames[:] = sorted(d for d in dirnames if not skipped_skill_file(here / d, root, exclusions))
+        found.extend(here / f for f in filenames)
+    return [p for p in found if p.is_file() and not skipped_skill_file(p, root, exclusions)]
+
+
 def source_files(source):
     source = Path(source).resolve()
     if not (source / 'core').is_dir() or not (source / 'install.sh').is_file():
         raise ValueError('Framework source is unavailable or incomplete')
     paths = []
+    exclusions = skill_exclusions(source)
     for name in ('core', 'adapters'):
-        paths.extend(p for p in (source / name).rglob('*')
-                     if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc')
+        paths.extend(p for p in walk_files(source / name, source / SKILLS_DIR, exclusions)
+                     if '__pycache__' not in p.parts and p.suffix != '.pyc')
     paths.extend(source / n for n in ('install.sh', 'Makefile', 'sdlc-policy.md', 'doctor')
                  if (source / n).is_file())
     result = {str(p.relative_to(source)): digest(p.read_bytes()) for p in paths}
@@ -121,10 +166,9 @@ def claude_skill_writes(source, runtime):
     manifest = runtime / 'doctor-installation.json'
     old = json.loads(manifest.read_text()).get('managed_files', {}) if manifest.is_file() else {}
     writes = {}
-    for src in sorted((source / 'adapters/claude/skills').rglob('*')):
-        if not src.is_file():
-            continue
-        dst = runtime / 'skills' / src.relative_to(source / 'adapters/claude/skills')
+    exclusions = skill_exclusions(source)
+    for src in sorted(walk_files(source / SKILLS_DIR, source / SKILLS_DIR, exclusions)):
+        dst = runtime / 'skills' / src.relative_to(source / SKILLS_DIR)
         for part in (dst, *dst.parents):
             if part.is_symlink():
                 raise ValueError('Refusing symlinked skill destination')
