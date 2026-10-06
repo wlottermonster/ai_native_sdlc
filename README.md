@@ -244,6 +244,7 @@ client has loaded or trusted a hook; live hook behaviour is reported separately.
       req-gate.sh             Gate A: every REQ has a task; Gate B: at completion, every REQ has a test
       autofix.sh              formatters fix mechanical issues silently
       session-engines.sh      SessionStart: states the engine map the session is actually running under
+      postcompact-policy.sh   PostCompact: re-injects the routing section of the policy after compaction
     scripts/
       trace-matrix.sh         generates specs/<feature>/matrix.html (red = uncovered requirement)
       apply-engines.sh        rewrites each installed agent's `model:` line from the engine map
