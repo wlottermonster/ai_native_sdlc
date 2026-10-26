@@ -237,4 +237,112 @@ grep -o '"cmd\.note":"[^"]*"' "$manual" > "$tmpdir/zh-cmd-note.txt"
 assert_fgrep 'test-audit' "$tmpdir/zh-cmd-note.txt"
 assert_fgrep 'rca' "$tmpdir/zh-cmd-note.txt"
 
+# ---------------------------------------------------------------------------
+# Training-page: the three touch points (no REQ-ID: a caller-scoped update of
+# the manual once the Gate 1 stamp, the evidence file and the three guards
+# shipped). The page says where the stamp is made, where the evidence is
+# written and where both are read, names the two files, the script's five
+# steps, the three guards with their warn-then-deny rule and its override, and
+# the compaction entry, in both languages. Every card list keeps the same
+# number of cards in English and in Chinese, and the two new tables the same
+# number of rows: setLang swaps a whole list, so a list that is short in one
+# language loses a card the moment the reader switches.
+req "training-page: three touch points (no REQ-ID)"
+
+# en_of <key> <end> <out> — the English markup of the element carrying
+# data-i18n="<key>", from its opening tag up to the first <end> after it.
+en_of() {
+  sed -n "s/.*data-i18n=\"${1//./\\.}\">//p" "$manual" | sed "s#$2.*##" > "$3"
+}
+# zh_of <key> <out> — the Chinese string for <key> in the ZH dictionary,
+# whether it is a template literal or a double-quoted string.
+zh_of() {
+  { grep -o "\"${1//./\\.}\":\`[^\`]*\`" "$manual"
+    grep -o "\"${1//./\\.}\":\"[^\"]*\"" "$manual"; } > "$2"
+}
+# same_count <pattern> <en-file> <zh-file> <out> — "same N" when both files
+# hold N matches of <pattern>, else "differ N M".
+same_count() {
+  local en zh
+  en=$(grep -o -- "$1" "$2" | wc -l | tr -d '[:space:]')
+  zh=$(grep -o -- "$1" "$3" | wc -l | tr -d '[:space:]')
+  if [ "$en" = "$zh" ]; then
+    printf 'same %s\n' "$en" > "$4"
+  else
+    printf 'differ %s %s\n' "$en" "$zh" > "$4"
+  fi
+}
+
+# Every card list, found rather than named, so a new list is covered too.
+grep -o 'data-i18n="[a-z]*\.cards"' "$manual" | sed 's/^data-i18n="//; s/"$//' \
+  | sort -u > "$tmpdir/card-keys.txt"
+count_into "$tmpdir/card-keys.txt" '.' "$tmpdir/card-keys.count"
+assert_grep '^[1-9][0-9]*$' "$tmpdir/card-keys.count"
+while IFS= read -r key; do
+  en_of "$key" '</div>' "$tmpdir/en-$key.txt"
+  zh_of "$key" "$tmpdir/zh-$key.txt"
+  same_count '<article' "$tmpdir/en-$key.txt" "$tmpdir/zh-$key.txt" "$tmpdir/cards-$key.count"
+  assert_grep '^same [1-9][0-9]*$' "$tmpdir/cards-$key.count"
+done < "$tmpdir/card-keys.txt"
+# The lifecycle is five steps in both languages: the touch points ride inside
+# the steps, they do not add a sixth.
+assert_grep '^same 5$' "$tmpdir/cards-path.cards.count"
+
+# The two reference tables: the five script steps and the three guards, with a
+# header row each, in both languages.
+for key in touch.table guards.table; do
+  en_of "$key" '</table>' "$tmpdir/en-$key.txt"
+  zh_of "$key" "$tmpdir/zh-$key.txt"
+  same_count '<tr>' "$tmpdir/en-$key.txt" "$tmpdir/zh-$key.txt" "$tmpdir/rows-$key.count"
+done
+assert_grep '^same 6$' "$tmpdir/rows-touch.table.count"
+assert_grep '^same 4$' "$tmpdir/rows-guards.table.count"
+
+for key in proof.note touch.intro guards.note touch.compact try.steps; do
+  en_of "$key" '</p>' "$tmpdir/en-$key.txt"
+  zh_of "$key" "$tmpdir/zh-$key.txt"
+done
+
+# Where each touch point sits, said in both languages: the stamp at Gate 1, the
+# evidence at the end of the build, the status read at release.
+for lang in en zh; do
+  assert_fgrep 'state.json' "$tmpdir/$lang-path.cards.txt"
+  assert_fgrep 'evidence.json' "$tmpdir/$lang-path.cards.txt"
+  assert_fgrep 'sdlc-state.sh status' "$tmpdir/$lang-path.cards.txt"
+  assert_fgrep 'sdlc-state.sh stamp' "$tmpdir/$lang-decisions.cards.txt"
+  assert_fgrep 'sdlc-state.sh evidence' "$tmpdir/$lang-proof.note.txt"
+  assert_fgrep 'evidence.json' "$tmpdir/$lang-proof.note.txt"
+  assert_fgrep 'state.json' "$tmpdir/$lang-touch.intro.txt"
+  assert_fgrep 'evidence.json' "$tmpdir/$lang-touch.intro.txt"
+  for step in init stamp evidence record status; do
+    assert_fgrep "sdlc-state.sh $step" "$tmpdir/$lang-touch.table.txt"
+  done
+  assert_fgrep 'make check' "$tmpdir/$lang-touch.table.txt"
+  assert_fgrep 'make test' "$tmpdir/$lang-touch.table.txt"
+  for guard in gate1-stamp evidence-merge stop-evidence; do
+    assert_fgrep "<code>$guard</code>" "$tmpdir/$lang-guards.table.txt"
+  done
+  assert_fgrep 'SDLC_GUARD_MODE=warn' "$tmpdir/$lang-guards.note.txt"
+  assert_fgrep 'SDLC_GUARD_MODE=deny' "$tmpdir/$lang-guards.note.txt"
+  assert_fgrep 'UNVERIFIED' "$tmpdir/$lang-guards.note.txt"
+  assert_fgrep 'SessionStart' "$tmpdir/$lang-touch.compact.txt"
+  assert_fgrep '<code>compact</code>' "$tmpdir/$lang-touch.compact.txt"
+  assert_fgrep 'compact-policy.sh' "$tmpdir/$lang-touch.compact.txt"
+  assert_fgrep 'state.json' "$tmpdir/$lang-try.steps.txt"
+  assert_fgrep 'evidence.json' "$tmpdir/$lang-try.steps.txt"
+done
+# The stamp is the owner's act: the permission prompt is named as theirs.
+assert_fgrep 'permission' "$tmpdir/en-decisions.cards.txt"
+assert_fgrep '許可' "$tmpdir/zh-decisions.cards.txt"
+# The record holds both exit codes, the fingerprint and the verifier's verdict.
+assert_fgrep 'exit codes' "$tmpdir/en-proof.note.txt"
+assert_fgrep 'fingerprint' "$tmpdir/en-proof.note.txt"
+assert_fgrep 'verdict' "$tmpdir/en-proof.note.txt"
+assert_fgrep '指紋' "$tmpdir/zh-proof.note.txt"
+# The warn window and the Stop gate's cap, as numbers a reader can check.
+assert_fgrep '14 days' "$tmpdir/en-guards.note.txt"
+assert_fgrep '14 天' "$tmpdir/zh-guards.note.txt"
+assert_fgrep '6 refusals in a row' "$tmpdir/en-guards.note.txt"
+assert_fgrep '連續拒絕 6 次' "$tmpdir/zh-guards.note.txt"
+
 finish

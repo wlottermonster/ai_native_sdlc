@@ -88,9 +88,15 @@ Do these in order on your own computer; each step says what you should see. Word
 10. **Plan a feature (Gate 1).** Type `/spec add a due date to todos`.
     *You will see:* a short decision digest with the requirements, each with a REQ-ID.
     Read it; answer its questions; approve it or ask for changes. Nothing is built before this.
+    Your yes is then recorded with `~/.claude/scripts/sdlc-state.sh stamp <feature>`, which
+    writes it into `specs/<feature>/state.json`; the command asks for your permission first,
+    and that prompt is yours to answer.
 11. **Let it build.** Type `/build`.
     *You will see:* it write tests first, build in a **worktree**, run a **verifier**, and
     report with evidence (test output), not a claim.
+    The wrap-up ends with `sdlc-state.sh evidence <feature>`: it runs `make check` and
+    `make test` and writes both exit codes to `specs/<feature>/evidence.json`. The verifier's
+    verdict is added to that file with `sdlc-state.sh record`.
 12. **Try it yourself.** `python3.12 todo.py add "pay rent" --due friday`, then
     `python3.12 todo.py list` (use whatever form the plan agreed). Write down everything
     that feels wrong, then send it as one batch in a single message.
@@ -98,6 +104,8 @@ Do these in order on your own computer; each step says what you should see. Word
 13. **Ship it (Gate 2).** Type `/ship`.
     *You will see:* a **ship digest** computed from the real diff and tests, and a question
     per branch. Nothing ships until you say yes.
+    It reads `sdlc-state.sh status` first and offers only branches whose evidence is
+    current and passing.
 14. **Wrap-up.** Three more commands for later: `/rca <bug>` turns one bug into a fix, a
     test and a rule; `/hunt` looks for bugs on its own and stops itself; `/test-audit`
     judges whether the tests are any good. What is NOT guaranteed: hooks run on your

@@ -187,6 +187,25 @@ assert_grep 'CI' "$wk"
 assert_grep 'bypass' "$wk"
 
 # ---------------------------------------------------------------------------
+req "readme: the walk-through shows the stamp, the evidence and the status read"
+# Each touch point sits in the step where it happens: the stamp where Gate 1 is
+# passed (step 10), the evidence and the verifier's verdict where the build
+# finishes (step 11), the status read where /ship offers branches (step 13).
+# Matched by line, so a sentence moved into the wrong step goes red.
+assert_order "$wk" '^10\. ' 'sdlc-state\.sh stamp <feature>' '^11\. '
+assert_order "$wk" '^11\. ' 'sdlc-state\.sh evidence <feature>' '^12\. '
+assert_order "$wk" '^11\. ' 'sdlc-state\.sh record' '^12\. '
+assert_order "$wk" '^13\. ' 'sdlc-state\.sh status' '^14\. '
+# The same steps read as prose, with the Markdown line breaks folded.
+tr '\n' ' ' < "$wk" | tr -s ' ' > "$wk.flat"
+# shellcheck disable=SC2088  # a literal search string, not a path to expand
+assert_fgrep '~/.claude/scripts/sdlc-state.sh stamp <feature>' "$wk.flat"
+assert_fgrep 'asks for your permission first' "$wk.flat"
+assert_fgrep 'specs/<feature>/state.json' "$wk.flat"
+assert_fgrep 'specs/<feature>/evidence.json' "$wk.flat"
+assert_fgrep 'only branches whose evidence is current and passing' "$wk.flat"
+
+# ---------------------------------------------------------------------------
 req "readme: the glossary defines every term the walk-through leans on"
 assert_order "$readme" '^## Words used here$' '^## Development$'
 wd="$tmpdir/words.txt"
