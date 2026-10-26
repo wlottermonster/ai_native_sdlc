@@ -26,7 +26,7 @@ python3.12 "$here/core/installation.py" --source "$here" --runtime "$HOME/.claud
 mkdir -p "$HOME/.claude/agents" "$HOME/.claude/hooks" "$HOME/.claude/scripts" "$HOME/.claude/commands"
 
 command -v jq >/dev/null 2>&1 \
-  || echo "WARNING: jq not found — the Stop-hook loop guard, the npm-check fallback, and the PostCompact hook all need it (brew install jq)."
+  || echo "WARNING: jq not found — the Stop-hook loop guard, the npm-check fallback, the compaction entry (compact-policy.sh) and sdlc-state.sh all need it (brew install jq)."
 
 echo "Installing agents → ~/.claude/agents/"
 for f in "$here"/agents/*.md; do
@@ -48,6 +48,23 @@ for f in "$here"/hooks/*.sh; do
   cp -v "$f" "$HOME/.claude/hooks/"
   chmod +x "$HOME/.claude/hooks/$(basename "$f")"
 done
+
+# The guards' warn-then-deny clocks (REQ-TOUCH-023). A clock that already exists
+# is the owner's running window and is never reset, and a .log is never touched:
+# only a missing <guard>.since is seeded, with the epoch second of this install.
+guards_dir="$HOME/.claude/sdlc-guards"
+mkdir -p "$guards_dir"
+seeded=""
+for guard in gate1-stamp evidence-merge stop-evidence; do
+  [ -e "$guards_dir/$guard.since" ] && continue
+  date +%s > "$guards_dir/$guard.since"
+  seeded="$seeded $guard"
+done
+if [ -n "$seeded" ]; then
+  echo "Guard clocks: seeded$seeded in $guards_dir — they warn for 14 days, then deny"
+else
+  echo "Guard clocks: every clock in $guards_dir already existed — left untouched"
+fi
 
 echo "Installing scripts → ~/.claude/scripts/"
 for f in "$here"/scripts/*.sh; do
@@ -78,6 +95,13 @@ for stale in morning.md overnight.md; do
   [ -e "$stale_path" ] || continue
   echo "WARNING: stale command $stale_path from an older version — delete it yourself"
 done
+# The same for a hook this framework has superseded: the compaction
+# re-injection moved to the SessionStart compact entry, and a leftover
+# script plus its old settings entry would run both re-injections.
+stale_path="$HOME/.claude/hooks/postcompact-policy.sh"
+if [ -e "$stale_path" ]; then
+  echo "WARNING: stale hook $stale_path from an older version — delete it yourself, and remove the PostCompact entry from ~/.claude/settings.json"
+fi
 
 echo "Installing policy → ~/.claude/sdlc-policy.md"
 cp -v "$here/sdlc-policy.md" "$HOME/.claude/sdlc-policy.md"
@@ -163,7 +187,10 @@ Done. Remaining manual steps — these are yours, not a session's:
      Read the diff for the newly added SessionStart entry: it runs
      ~/.claude/hooks/session-engines.sh at startup, resume and clear, so a
      session opens knowing which model runs which role. It is deliberately
-     not run on compaction — the PostCompact entry already covers that.
+     not run on compaction — the second SessionStart entry, matcher compact,
+     runs ~/.claude/hooks/compact-policy.sh to re-inject the routing policy.
+     If ~/.claude/settings.json still carries a PostCompact entry, delete it after the merge:
+     the SessionStart compact entry replaces it.
   2. Open /hooks once in Claude Code (or restart) so the new hooks load.
   3. Add a Makefile with `check`/`test` targets to each repo
      (see templates/) — repos without one are simply not gated yet.
@@ -172,4 +199,11 @@ Done. Remaining manual steps — these are yours, not a session's:
      that is what applies the edit to the agents' own model frontmatter.
   5. Point the SDLC section of ~/.claude/CLAUDE.md at ~/.claude/sdlc-policy.md
      instead of duplicating the routing table — one source of truth.
+  6. Three guards (gate1-stamp, evidence-merge, stop-evidence) WARN for 14 days
+     from the first install that seeded their clocks in ~/.claude/sdlc-guards/,
+     then DENY. SDLC_GUARD_MODE=warn in the environment keeps them warning.
+     They read specs/<feature>/state.json (the Gate 1 stamp) and
+     specs/<feature>/evidence.json (the check and test run), both written by
+     ~/.claude/scripts/sdlc-state.sh; the merged permissions.ask rules make
+     its stamp command ask first, so the stamp stays your act.
 EOF

@@ -375,7 +375,6 @@ assert_grep '^SessionStart$' "$tmpdir/hook-events.txt"
 assert_grep '^PreToolUse$' "$tmpdir/hook-events.txt"
 assert_grep '^PostToolUse$' "$tmpdir/hook-events.txt"
 assert_grep '^Stop$' "$tmpdir/hook-events.txt"
-assert_grep '^PostCompact$' "$tmpdir/hook-events.txt"
 
 # (c) Its command runs the session-engines hook out of the installed hooks
 #     directory, quoted the way every other command in the file is.
@@ -430,8 +429,9 @@ assert_matcher_covers "$ss_matcher" startup
 assert_matcher_covers "$ss_matcher" resume
 assert_matcher_covers "$ss_matcher" clear
 
-# (b) ...and NOT compaction: the PostCompact entry above already re-injects the
-#     policy there, so this hook must not re-fire on every compaction.
+# (b) ...and NOT compaction: the SessionStart compact entry (compact-policy.sh)
+#     re-injects the policy there, so this hook must not re-fire on every
+#     compaction.
 assert_matcher_excludes "$ss_matcher" compact
 
 # (c) A timeout is present, so a slow or wedged map read cannot hang a start.

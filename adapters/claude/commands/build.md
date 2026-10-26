@@ -10,6 +10,13 @@ never needs the owner present — gates pause only at Gate 1 (already passed)
 and Gate 2 (/ship). If no approved spec exists, say so and suggest /spec —
 never invent requirements.
 
+Build no feature whose stamp is missing or stale: check each one first with
+`~/.claude/scripts/sdlc-state.sh stamp-state <feature>`. An unstamped in-flight
+feature is offered to the owner at the stamp prompt
+(`~/.claude/scripts/sdlc-state.sh stamp <feature>`), once, and never stamped
+silently; if the owner declines or is not there to answer, skip that feature
+and name it in the build summary.
+
 1. **Claim before work.** Mark a task `[~]` before starting so a concurrent
    session never doubles it; restore `[ ]` if abandoned.
 2. **One task at a time, one worktree branch per task** (`sdlc/<feature>-<task>`).
@@ -42,7 +49,15 @@ never invent requirements.
 8. **Wrap up**: the coordinating session runs `make check` and `make test` on the
    stable tree after all task branches are assembled, and records both exit codes.
    If the tree changes, re-run the affected full checks. Then use a fresh-eyes
-   `verifier` (and `ui-tester` for webapp e2e), followed by /code-review with
-   fixes applied and checks re-run. Present the build summary
+   `verifier` (and `ui-tester` for webapp e2e), followed by
+   /code-review with fixes applied and checks re-run.
+   LAST, after the code-review fixes and the re-run checks, run `~/.claude/scripts/sdlc-state.sh evidence <feature>`
+   on the feature branch: it runs check then test and writes
+   `specs/<feature>/evidence.json`, and a non-zero exit is red evidence to fix,
+   never to record over. Then record the verifier's verdict with
+   `sdlc-state.sh record <feature> verifier <PASS|FAIL|COULD-NOT-TEST> "<note>"`
+   (in a webapp repository, also the ui-tester's, with
+   `sdlc-state.sh record <feature> ui-tester <verdict> "<note>"`), and commit
+   `evidence.json`. Present the build summary
    in chat (matrix, branches, parked items, assumptions made). Gate 2 happens
    via /ship — never push.

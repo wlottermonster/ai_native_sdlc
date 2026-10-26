@@ -250,8 +250,12 @@ client has loaded or trusted a hook; live hook behaviour is reported separately.
       req-gate.sh             Gate A: every REQ has a task; Gate B: at completion, every REQ has a test
       autofix.sh              formatters fix mechanical issues silently
       session-engines.sh      SessionStart: states the engine map the session is actually running under
-      postcompact-policy.sh   PostCompact: re-injects the routing section of the policy after compaction
+      compact-policy.sh       SessionStart (matcher compact): re-injects the routing section of the
+                              policy after compaction
+      guard-lib.sh            the warn-then-deny clock the three guards share (14 days, then deny)
     scripts/
+      sdlc-state.sh           the one writer of specs/<feature>/state.json (the Gate 1 stamp)
+                              and evidence.json (the check and test run the guards read)
       trace-matrix.sh         generates specs/<feature>/matrix.html (red = uncovered requirement)
       apply-engines.sh        rewrites each installed agent's `model:` line from the engine map
       mod-check.sh            runs `claude plugin validate` / `claude plugin test` on the
@@ -369,6 +373,19 @@ optional except the two Makefile targets, which the gates call by name.
    approved from the /spec decision digest.
 2. **Ship review** — nothing ships without an explicit yes; where push deploys, that yes
    is the deploy.
+
+Both decisions leave a file the hooks can read. `~/.claude/scripts/sdlc-state.sh` writes
+`specs/<feature>/state.json`, which carries the Gate 1 stamp, and `evidence.json`, which
+records the `make check` and `make test` run the work was finished on; each file carries a
+digest, so a hand edit makes it invalid. Three guards read them: `gate1-stamp` refuses a
+commit to an `sdlc/` branch whose stamp is missing or stale, `evidence-merge` refuses a
+merge into the default branch without current, green evidence, and `stop-evidence` refuses
+to end a session on a finished feature branch without it. Each guard warns for 14 days
+from the clock the installer starts in `~/.claude/sdlc-guards/`, then denies;
+`SDLC_GUARD_MODE=warn` keeps them warning. The stamp is the owner's act: the snippet's
+`permissions.ask` rules make `sdlc-state.sh stamp`, and an edit of a `state.json`, ask
+first. After a compaction, the `SessionStart` entry with matcher `compact` runs
+`compact-policy.sh` to bring the routing policy back.
 
 ## Codex specifics
 

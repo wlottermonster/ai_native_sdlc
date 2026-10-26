@@ -2,10 +2,13 @@
 # AI-Native SDLC — requirement coverage gates.
 # Gate A (always, once tasks.md exists): every non-deferred REQ-ID in
 #   requirements.md must appear in tasks.md.  Missing → exit 2 (block).
-# Gate B (only when a feature CLAIMS completion, i.e. tasks.md has no
-#   unchecked boxes): every non-deferred REQ-ID must appear in at least one
-#   test file.  Missing → exit 2 (block).
-# Mid-flight commits of partial work are never blocked by Gate B.
+# Gate B (per requirement): a non-deferred REQ-ID that tasks.md CLAIMS — cited
+#   by at least one checkbox line, every one of them [x] — must appear in at
+#   least one test file, even while other tasks are open.  Missing → exit 2.
+#   An ID cited by no checkbox line is UNTASKED and is claimed only when the
+#   whole file has no [ ], [~] or [!] box; an ID on a [!] line is PARKED and
+#   never blocks; an ID on a [ ] or [~] line is OPEN and never blocks.
+# --report labels each ID OK, OPEN, PARKED, UNTASKED or DEFERRED.
 # Usage: as a hook (reads+drains stdin) or manually: req-gate.sh [--report]
 set -u
 mode="${1:-enforce}"
@@ -89,6 +92,43 @@ for req in specs/*/requirements.md; do
   # an ID is deferred if its block carries "verify: deferred" before the next ID.
   # match() extracts the ID wherever it sits on the line (survives **bold**, bullets)
   deferred=$(awk 'match($0, /REQ-[A-Z0-9-]+-[0-9]{3}/){cur=substr($0,RSTART,RLENGTH)} /verify:[ ]*deferred/{if(cur!="") print cur}' "$req" | sort -u)
+  # Per-ID task class: "<id> CLAIMED|OPEN|PARKED" for every ID that some
+  # checkbox line cites. A checkbox line is `- [?]` after optional indentation
+  # plus its indented continuation lines; an unindented line ends it, a blank
+  # line does not. Precedence: any [!] → PARKED, else any [ ]/[~] → OPEN,
+  # else (all other boxes, [x] included) → CLAIMED.
+  taskcls=""
+  file_closed=0
+  if [ -f "$tasks" ]; then
+    taskcls=$(awk '
+      function collect(s) {
+        while (match(s, /REQ-[A-Z0-9-]+-[0-9]{3}/)) {
+          ids[substr(s, RSTART, RLENGTH)] = 1
+          s = substr(s, RSTART + RLENGTH)
+        }
+      }
+      function flush(   i) {
+        if (inblk) for (i in ids) {
+          seen[i] = 1
+          if (st == "!") p[i] = 1
+          else if (st == " " || st == "~") o[i] = 1
+        }
+        split("", ids); inblk = 0
+      }
+      /^[[:space:]]*- \[.\]/ {
+        flush(); inblk = 1
+        match($0, /- \[.\]/); st = substr($0, RSTART + 3, 1)
+        collect($0); next
+      }
+      /^[[:space:]]+[^[:space:]]/ { if (inblk) collect($0); next }
+      /^[[:space:]]*$/ { next }
+      { flush() }
+      END {
+        flush()
+        for (i in seen) print i, ((i in p) ? "PARKED" : ((i in o) ? "OPEN" : "CLAIMED"))
+      }' "$tasks")
+    grep -qE '^[[:space:]]*- \[[ ~!]\]' "$tasks" || file_closed=1
+  fi
 
   for id in $ids; do
     if echo "$deferred" | grep -qx "$id"; then
@@ -101,20 +141,43 @@ for req in specs/*/requirements.md; do
       fail=1
       continue
     fi
-    # Gate B — only when the feature claims completion: no open [ ], claimed [~],
-    # or parked [!] boxes remain (in-progress and parked are NOT complete)
-    if [ -f "$tasks" ] && ! grep -qE '^[[:space:]]*- \[[ ~!]\]' "$tasks"; then
-      covered=0
-      if [ -n "$testfiles" ]; then
-        # test output, not xargs exit code (which only reflects the last batch)
-        [ -n "$(echo "$testfiles" | tr '\n' '\0' | xargs -0 grep -l -- "$id" 2>/dev/null)" ] && covered=1
-      fi
-      if [ "$covered" -eq 0 ]; then
-        out+="GATE B: $feat claims completion but $id has no tagged test"$'\n'
-        fail=1
-      fi
+    # Gate B, per requirement (REQ-TOUCH-025 to 027). CLAIMED: cited by at
+    # least one checkbox line, every one of them [x] — a tagged test is
+    # required even while other tasks are open. PARKED: any citing line is
+    # [!] — reported, never blocked. OPEN: any citing line is [ ] or [~].
+    # UNTASKED: cited by no checkbox line — the old file-level rule claims it
+    # only when tasks.md has no [ ], [~] or [!] box at all.
+    cls=$(printf '%s\n' "$taskcls" | awk -v id="$id" '$1 == id { print $2; f=1 } END { if (!f) print "UNTASKED" }')
+    if [ "$cls" = "UNTASKED" ] && [ "$file_closed" -eq 1 ]; then
+      cls=FILECLAIMED
     fi
-    [ "$mode" = "--report" ] && out+="$feat $id OK"$'\n'
+    case "$cls" in
+      CLAIMED|FILECLAIMED)
+        covered=0
+        if [ -n "$testfiles" ]; then
+          # test output, not xargs exit code (which only reflects the last batch)
+          [ -n "$(echo "$testfiles" | tr '\n' '\0' | xargs -0 grep -l -- "$id" 2>/dev/null)" ] && covered=1
+        fi
+        if [ "$covered" -eq 0 ]; then
+          if [ "$cls" = "CLAIMED" ]; then
+            out+="GATE B: $feat claims $id complete but it has no tagged test"$'\n'
+          else
+            out+="GATE B: $feat claims completion but $id has no tagged test"$'\n'
+          fi
+          fail=1
+        else
+          [ "$mode" = "--report" ] && out+="$feat $id OK"$'\n'
+        fi
+        ;;
+      PARKED|OPEN|UNTASKED)
+        [ "$mode" = "--report" ] && out+="$feat $id $cls"$'\n'
+        ;;
+      *)
+        # An unrecognised class is a gate that cannot classify: never an allow.
+        out+="GATE B: $feat $id could not be classified ($cls)"$'\n'
+        fail=1
+        ;;
+    esac
   done
 done
 

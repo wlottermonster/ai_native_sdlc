@@ -21,6 +21,12 @@ TEST_CURRENT_REQ=""
 # builders below copy from.
 TEST_REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
+# The guards' clock directory, once for the whole file (REQ-TOUCH-051): every
+# hook a test runs inherits it, so no test reads or mutates the owner's
+# ~/.claude/sdlc-guards. `finish` removes it.
+SDLC_GUARDS_DIR=$(mktemp -d "${TMPDIR:-/tmp}/sdlc-guards-test.XXXXXX")
+export SDLC_GUARDS_DIR
+
 # req <REQ-ID> — announce which requirement the following assertions check.
 req() {
   TEST_CURRENT_REQ="$1"
@@ -241,6 +247,9 @@ run_install() {
 
 # finish — print the tally and exit non-zero if anything failed.
 finish() {
+  case "${SDLC_GUARDS_DIR:-}" in
+    */sdlc-guards-test.*) rm -rf "$SDLC_GUARDS_DIR" ;;
+  esac
   if [ "$TEST_FAILURES" -gt 0 ]; then
     printf '     %d of %d assertion(s) FAILED\n' "$TEST_FAILURES" "$TEST_ASSERTIONS" >&2
     exit 1

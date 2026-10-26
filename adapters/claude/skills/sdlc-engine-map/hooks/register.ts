@@ -11,8 +11,8 @@
 // that entry unavailable for later dispatches of the role. The turn's own
 // result is passed on untouched and the failed dispatch is never retried.
 //
-// session.start and turn.start (every turn.start is the main loop's): the main
-// loop's model as the engine reports it is checked against the judge line and
+// session.start and turn.start (a turn.start carrying an `agentId` is a
+// subagent's and is passed on untouched, REQ-TOUCH-037): the main loop's model as the engine reports it is checked against the judge line and
 // the one-line status is set from the map read now and the chain in force
 // (status.ts). session.start also says once that CLAUDE_CODE_SUBAGENT_MODEL is
 // set, when it is. Both pass their event on unchanged.
@@ -44,7 +44,7 @@ import {
   type GoneByRole,
   type SessionChain,
 } from './chain.ts'
-import { computeStatus, variableNotice } from './status.ts'
+import { computeStatus, isSubagentTurn, variableNotice } from './status.ts'
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -295,6 +295,8 @@ export const register: Register = on => {
 
   guard('turn.start', () => {
     on('turn.start', async ($, e, next) => {
+      // A subagent's turn: passed on untouched, the status line left alone.
+      if (isSubagentTurn(e)) return next(e)
       const session = await openSession($)
       sayRefused($, session.notices)
       await session.save()

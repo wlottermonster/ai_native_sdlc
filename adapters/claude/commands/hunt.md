@@ -29,6 +29,206 @@ file, and say in the verdict which were given and which fell back to a default:
 An argument you cannot parse is reported and ignored, never guessed at: a misread
 budget is the difference between a short run and an all-night one.
 
+## H. What it must never do
+This list is absolute, and it is short enough to hold in mind at the end of a
+long run. Every line below is
+what a stuck loop reaches for when nobody is watching, which is exactly the
+condition this command runs in.
+
+- **Never push.** Not the hunt branch, not a tag, not to a fork, not with a
+  flag that makes it look like something else.
+- **Never deploy**, and never run anything the repo declares to be a deploy.
+- **Never merge into the default branch**, never rebase it, and never open a
+  merge for someone else to click. Everything this run makes stops at a local
+  branch, and Gate 2 is the owner's door.
+- **Never edit a protected path.** A REPORT-ONLY finding is filed and left
+  alone, however small the fix looks.
+- **Never decide a NEEDS-OWNER finding.** Carry it to the owner as a question,
+  never as a change already made.
+- **Never rewrite history** — no `commit --amend`, no `rebase`, no
+  `reset --hard`, no force of any kind. A history rewritten unattended destroys
+  the only record of what the run did.
+- **Never delete or disable a test**, and never weaken an assertion, skip a
+  case or mark one expected-to-fail to get a suite green.
+- **Never edit the `specs/` of another feature**, and never
+  tick a task checkbox anywhere. Checkboxes are execution state a build owns;
+  a hunt that ticks one reports work that was never done.
+- **Never edit `.claude/settings.json` or the engine map.** A loop that widens
+  its own permissions or changes which engine runs it has stopped being the
+  thing that was approved to run unattended.
+
+## F. Convergence, the budget, and stopping
+A round ends by computing a number and writing it down. Everything in this
+section exists so the run can tell "there is nothing left to find" apart from
+"I have been looking for a while", with nobody in the room to tell them apart.
+
+### The convergence line
+At the end of every round, COMPUTE that round's convergence line and write it
+into `specs/_hunt/HUNT.md` as a new row in the `## CONVERGENCE LOG` section
+declared in section B, beside the round number,
+carrying the count of confirmed FIXABLE findings that round produced. Append
+the row; never overwrite the previous round's, because the verdict reports
+every round's count and not just the last one.
+Computed and written, never felt: a loop that grades its own progress from
+memory reports the progress it hoped for, and nobody is awake to check.
+
+A round is DRY when that count is zero — no confirmed FIXABLE finding at all.
+That is the only thing "dry" means in this file, so the state file and the
+verdict can never disagree about what a round did.
+
+NEEDS-OWNER and REPORT-ONLY findings are EXCLUDED from the convergence count.
+They are the owner's queue and not the loop's: this run is forbidden from
+fixing either, so both are still there next round, and the round after that. A
+loop that counted them would never converge — it would wake, re-count the same
+untouchable pile, call itself productive, and hunt to the ceiling every night.
+
+### The budget, resolved once
+Resolve the floor, the ceiling and the fix budget ONCE at the start of the run,
+from `$ARGUMENTS` or the stated defaults, and record all three under
+`## CURRENT ROUND` in the state file, beside the `areas:` restriction the
+Arguments section resolved at the same moment and records in the same place.
+When the invocation names none, the
+defaults are
+a floor of 2 hours, a ceiling of 6 hours, and a fix budget of 5 findings per round.
+
+- **The floor** is the minimum time the run keeps hunting before a dry round is
+  allowed to stop it. It is
+  resolved ONCE at the start of the run, recorded there, and
+  compared against thereafter — the recorded start time plus the floor is a
+  fixed instant, and every round checks the clock against that one instant.
+  Never re-derive the floor at the start of a round, and never re-anchor it to
+  the current round's start or to the current date. A floor re-derived each
+  round is trivially true for a run that began earlier in the day: the first
+  check passes, the first dry round is then allowed to stop the run, and that
+  ends the hunt after a single pass. This is not hypothetical — it is a bug
+  a real implementation of this rule has shipped with, and it is
+  invisible from the outside, because a run that stops after one pass looks
+  exactly like a run that found nothing.
+- **The ceiling** is the hard wall-clock ceiling on the whole run, and the age
+  at which a run lock goes stale (section B).
+- **The fix budget** is the most findings a single round may fix; findings past
+  it are recorded unfixed, never dropped (section E).
+
+The ceiling and the fix budget are resolved at that same moment and
+recorded in the state file beside the floor, so a resumed run inherits the same
+budget rather than inventing a new one.
+A floor gives the run a reason to keep going, and
+nothing else gives it a reason to stop spending — a run holding a floor but no
+recorded ceiling has no upper bound at all.
+
+### The round gate
+The full `make check` must be
+green at the END of every round as well as before each commit, and you run it
+and read its exit code yourself, as section E requires. A commit-time gate
+proves the tree was green when one fix landed; only a round-end gate proves the
+round as a whole left the repo green, and a round can commit three fixes that
+pass apart and fail together.
+
+A round that ends red stops the run. Record `round ended red` as the stop
+reason, leave the tree exactly as it is for a human to read, and start no
+further round. Hunting on from a red gate measures every later finding against
+a broken baseline — the same reason section A refuses to start on one.
+
+Leaving the tree as it is means reverting nothing and amending nothing — the
+round's fixes are already committed and the tree already clean, because
+section E required that before the gate ran. It does NOT except this round from
+the state-file commit:
+a round that ends red still commits the state file as its last act, or the
+re-invocation refuses on a dirty tree instead of reporting the stop reason,
+and the red gate nobody can read about is worse than the red gate itself.
+
+### Stopping
+Run rounds YOURSELF until a stop condition is met. This command is
+self-driving: it does not wait to be told when to stop, and it
+never depends on an external driver to stop it.
+
+### Refusing to start is not stopping a run
+A REFUSAL and a STOP are not the same event, and the list below is a list of
+STOPS. A refusal ends the invocation on the spot and names the condition it
+observed instead of a stop reason, because no round of this run ever ran its
+course. The refusals are:
+the five preconditions of section A;
+the unreadable state file of section B, the lock conflict of section B;
+and
+the abort when `make check` yields no exit code at all in section E.
+Each already names what it observed where it is defined, and they are
+gathered here
+so that the stop list below is exhaustive rather than approximately true.
+A reader who finds a run ended for a reason not on that list is looking at a
+refusal, and a refusal writes no `STOPPED:` line.
+
+Two paths end an invocation without completing a round and do not fit that
+shape cleanly, so they are named here rather than left for a reader to notice.
+Precondition 5 is the one refusal that does not end on the spot: a RED baseline is refused as a
+place to hunt FROM, but
+the run then fixes that failure, reports it and stops, so it ends the
+invocation having done work — and no round ran its course, so it writes no
+`STOPPED:` line either.
+A re-invocation after a `STOPPED:` line is the other path that ends an invocation without completing a round:
+it does no work at all, and it reports the stop reason ALREADY recorded in the
+file rather than writing a new one (below).
+No count of refusals is stated here, and none should be: these two sit on the
+boundary, and a stated number is the first thing one more path makes wrong.
+
+These are the permitted stop reasons, and nothing else ends a run that started:
+
+- **dry** — the round's convergence count was zero AND there is nothing left to
+  look at: either the recorded floor has passed, or the matrix is fully swept
+  with every row `done` and none re-opened. A dry round before the floor stops
+  nothing WHILE ROWS REMAIN: sweep the next rows and keep going. But a dry round
+  with no rows left stops the run whatever the clock says — the floor exists to
+  stop a run giving up while there is still ground to cover, and there is none.
+  (Added after a live run walked into the gap between these two reasons: matrix
+  fully swept at three of three, convergence zero for two rounds, floor still
+  twelve minutes out, and NO permitted stop reason applied. Read literally, the
+  run had to keep starting rounds with no rows to sweep until the floor let
+  `dry` fire. It terminates, so it is not a hang — it burns budget doing
+  nothing and reports nothing about why.)
+- **time floor** — the floor has been reached and the matrix is fully swept,
+  with every row `done` and none re-opened. There is no work left in scope, and
+  the floor is no longer holding the run open. This and `dry` now overlap on the
+  swept-matrix case, deliberately: either name is true and either is honest, and
+  an overlap between two correct reasons costs nothing, while the gap between
+  them cost a run.
+- **ceiling** — the recorded wall-clock ceiling was reached. This is the one
+  reason that stops the run mid-work: finish the round in flight, leave the
+  tree clean, write the state file, commit it as section E requires, and stop.
+- **fix budget** — a round exhausted its fix budget and what remains of the
+  ceiling has no room for another full round. The findings it could not reach
+  are already recorded unfixed, so the next run starts with them proved.
+- **kill rule** — every finding still workable has hit the kill rule of section
+  E, so no further round can make progress on any of them.
+- **round ended red** — the round-end `make check` was red.
+- **owner stop** — the owner interrupted the run, or the repo asks it to stop.
+
+Whichever one fired, name it in the verdict. A run
+never ends without saying why: a finish with no stated reason is
+indistinguishable from a crash, and the next reader has to reconstruct from a
+log which of the two they are looking at.
+
+When a stop condition is met, write a `STOPPED: <reason>` line into
+`specs/_hunt/HUNT.md`, under `## CURRENT ROUND` where section B declares it, as
+the LAST write of the run — then commit the state file exactly as section E
+requires, which is the run's last ACT and adds nothing further to the file.
+Say in the final message that
+no further round is to be started. Then stop — no extra sweep, no one more
+area, no "while I am here".
+
+### Being re-invoked after a stop
+When `/hunt` is invoked again in a repo
+after a `STOPPED:` line has been written into its state file — by a scheduler,
+by a fresh session, by anyone — the answer is to
+report the recorded stop reason and do no work. Do not sweep, do not file, do
+not fix, and never clear the line: a stopped hunt is re-opened by a human
+removing that line, and by nothing else.
+
+This is also why the run must stop itself rather than trust something else to
+stop it. An external scheduler running on a
+fixed interval cannot be stopped by the command it runs, so without this rule a
+converged hunt would wake on every tick and
+re-sweep forever — spending a full budget each time to re-derive that there is
+nothing to find.
+
 ## A. Refusing to start
 Check every precondition below BEFORE any other work, in the order given. When
 one fails, stop and say in one line which precondition failed and what you
@@ -175,7 +375,7 @@ Its parts:
   Its ABSENCE is the normal state of a running hunt, and is never read as one of
   the missing sections that make a state file unreadable.
 
-Every field any later section writes into this file is declared here. A section
+Every field any other section writes into this file is declared here. A section
 that writes a field this shape does not show would produce a file the
 unreadable-state rule below then refuses to touch — night one writing a file
 night two must abort on.
@@ -532,178 +732,6 @@ the resume this whole command is built on can never happen. A hunt that cannot
 resume spends every night re-deriving what the last night already knew, which
 is the one thing the state file exists to stop.
 
-## F. Convergence, the budget, and stopping
-A round ends by computing a number and writing it down. Everything in this
-section exists so the run can tell "there is nothing left to find" apart from
-"I have been looking for a while", with nobody in the room to tell them apart.
-
-### The convergence line
-At the end of every round, COMPUTE that round's convergence line and write it
-into `specs/_hunt/HUNT.md` as a new row in the `## CONVERGENCE LOG` section
-declared in section B, beside the round number,
-carrying the count of confirmed FIXABLE findings that round produced. Append
-the row; never overwrite the previous round's, because the verdict reports
-every round's count and not just the last one.
-Computed and written, never felt: a loop that grades its own progress from
-memory reports the progress it hoped for, and nobody is awake to check.
-
-A round is DRY when that count is zero — no confirmed FIXABLE finding at all.
-That is the only thing "dry" means in this file, so the state file and the
-verdict can never disagree about what a round did.
-
-NEEDS-OWNER and REPORT-ONLY findings are EXCLUDED from the convergence count.
-They are the owner's queue and not the loop's: this run is forbidden from
-fixing either, so both are still there next round, and the round after that. A
-loop that counted them would never converge — it would wake, re-count the same
-untouchable pile, call itself productive, and hunt to the ceiling every night.
-
-### The budget, resolved once
-Resolve the floor, the ceiling and the fix budget ONCE at the start of the run,
-from `$ARGUMENTS` or the stated defaults, and record all three under
-`## CURRENT ROUND` in the state file, beside the `areas:` restriction the
-Arguments section resolved at the same moment and records in the same place.
-When the invocation names none, the
-defaults are
-a floor of 2 hours, a ceiling of 6 hours, and a fix budget of 5 findings per round.
-
-- **The floor** is the minimum time the run keeps hunting before a dry round is
-  allowed to stop it. It is
-  resolved ONCE at the start of the run, recorded there, and
-  compared against thereafter — the recorded start time plus the floor is a
-  fixed instant, and every round checks the clock against that one instant.
-  Never re-derive the floor at the start of a round, and never re-anchor it to
-  the current round's start or to the current date. A floor re-derived each
-  round is trivially true for a run that began earlier in the day: the first
-  check passes, the first dry round is then allowed to stop the run, and that
-  ends the hunt after a single pass. This is not hypothetical — it is a bug
-  a real implementation of this rule has shipped with, and it is
-  invisible from the outside, because a run that stops after one pass looks
-  exactly like a run that found nothing.
-- **The ceiling** is the hard wall-clock ceiling on the whole run, and the age
-  at which a run lock goes stale (section B).
-- **The fix budget** is the most findings a single round may fix; findings past
-  it are recorded unfixed, never dropped (section E).
-
-The ceiling and the fix budget are resolved at that same moment and
-recorded in the state file beside the floor, so a resumed run inherits the same
-budget rather than inventing a new one.
-A floor gives the run a reason to keep going, and
-nothing else gives it a reason to stop spending — a run holding a floor but no
-recorded ceiling has no upper bound at all.
-
-### The round gate
-The full `make check` must be
-green at the END of every round as well as before each commit, and you run it
-and read its exit code yourself, as section E requires. A commit-time gate
-proves the tree was green when one fix landed; only a round-end gate proves the
-round as a whole left the repo green, and a round can commit three fixes that
-pass apart and fail together.
-
-A round that ends red stops the run. Record `round ended red` as the stop
-reason, leave the tree exactly as it is for a human to read, and start no
-further round. Hunting on from a red gate measures every later finding against
-a broken baseline — the same reason section A refuses to start on one.
-
-Leaving the tree as it is means reverting nothing and amending nothing — the
-round's fixes are already committed and the tree already clean, because
-section E required that before the gate ran. It does NOT except this round from
-the state-file commit:
-a round that ends red still commits the state file as its last act, or the
-re-invocation refuses on a dirty tree instead of reporting the stop reason,
-and the red gate nobody can read about is worse than the red gate itself.
-
-### Stopping
-Run rounds YOURSELF until a stop condition is met. This command is
-self-driving: it does not wait to be told when to stop, and it
-never depends on an external driver to stop it.
-
-### Refusing to start is not stopping a run
-A REFUSAL and a STOP are not the same event, and the list below is a list of
-STOPS. A refusal ends the invocation on the spot and names the condition it
-observed instead of a stop reason, because no round of this run ever ran its
-course. The refusals are:
-the five preconditions of section A;
-the unreadable state file of section B, the lock conflict of section B;
-and
-the abort when `make check` yields no exit code at all in section E.
-Each already names what it observed where it is defined, and they are
-gathered here
-so that the stop list below is exhaustive rather than approximately true.
-A reader who finds a run ended for a reason not on that list is looking at a
-refusal, and a refusal writes no `STOPPED:` line.
-
-Two paths end an invocation without completing a round and do not fit that
-shape cleanly, so they are named here rather than left for a reader to notice.
-Precondition 5 is the one refusal that does not end on the spot: a RED baseline is refused as a
-place to hunt FROM, but
-the run then fixes that failure, reports it and stops, so it ends the
-invocation having done work — and no round ran its course, so it writes no
-`STOPPED:` line either.
-A re-invocation after a `STOPPED:` line is the other path that ends an invocation without completing a round:
-it does no work at all, and it reports the stop reason ALREADY recorded in the
-file rather than writing a new one (below).
-No count of refusals is stated here, and none should be: these two sit on the
-boundary, and a stated number is the first thing one more path makes wrong.
-
-These are the permitted stop reasons, and nothing else ends a run that started:
-
-- **dry** — the round's convergence count was zero AND there is nothing left to
-  look at: either the recorded floor has passed, or the matrix is fully swept
-  with every row `done` and none re-opened. A dry round before the floor stops
-  nothing WHILE ROWS REMAIN: sweep the next rows and keep going. But a dry round
-  with no rows left stops the run whatever the clock says — the floor exists to
-  stop a run giving up while there is still ground to cover, and there is none.
-  (Added after a live run walked into the gap between these two reasons: matrix
-  fully swept at three of three, convergence zero for two rounds, floor still
-  twelve minutes out, and NO permitted stop reason applied. Read literally, the
-  run had to keep starting rounds with no rows to sweep until the floor let
-  `dry` fire. It terminates, so it is not a hang — it burns budget doing
-  nothing and reports nothing about why.)
-- **time floor** — the floor has been reached and the matrix is fully swept,
-  with every row `done` and none re-opened. There is no work left in scope, and
-  the floor is no longer holding the run open. This and `dry` now overlap on the
-  swept-matrix case, deliberately: either name is true and either is honest, and
-  an overlap between two correct reasons costs nothing, while the gap between
-  them cost a run.
-- **ceiling** — the recorded wall-clock ceiling was reached. This is the one
-  reason that stops the run mid-work: finish the round in flight, leave the
-  tree clean, write the state file, commit it as section E requires, and stop.
-- **fix budget** — a round exhausted its fix budget and what remains of the
-  ceiling has no room for another full round. The findings it could not reach
-  are already recorded unfixed, so the next run starts with them proved.
-- **kill rule** — every finding still workable has hit the kill rule of section
-  E, so no further round can make progress on any of them.
-- **round ended red** — the round-end `make check` was red.
-- **owner stop** — the owner interrupted the run, or the repo asks it to stop.
-
-Whichever one fired, name it in the verdict. A run
-never ends without saying why: a finish with no stated reason is
-indistinguishable from a crash, and the next reader has to reconstruct from a
-log which of the two they are looking at.
-
-When a stop condition is met, write a `STOPPED: <reason>` line into
-`specs/_hunt/HUNT.md`, under `## CURRENT ROUND` where section B declares it, as
-the LAST write of the run — then commit the state file exactly as section E
-requires, which is the run's last ACT and adds nothing further to the file.
-Say in the final message that
-no further round is to be started. Then stop — no extra sweep, no one more
-area, no "while I am here".
-
-### Being re-invoked after a stop
-When `/hunt` is invoked again in a repo
-after a `STOPPED:` line has been written into its state file — by a scheduler,
-by a fresh session, by anyone — the answer is to
-report the recorded stop reason and do no work. Do not sweep, do not file, do
-not fix, and never clear the line: a stopped hunt is re-opened by a human
-removing that line, and by nothing else.
-
-This is also why the run must stop itself rather than trust something else to
-stop it. An external scheduler running on a
-fixed interval cannot be stopped by the command it runs, so without this rule a
-converged hunt would wake on every tick and
-re-sweep forever — spending a full budget each time to re-derive that there is
-nothing to find.
-
 ## G. The verdict
 End with ONE verdict at the end of the run: one message, in one place, rather
 than a commentary spread over the hours nobody was reading. It carries:
@@ -736,32 +764,4 @@ left them without tests is not a green run, and
 the verdict says so — in its summary line, not in a footnote. An untested fix
 is a change nobody can prove, and the next run cannot tell it apart from a fix
 that was never made.
-
-## H. What it must never do
-This list is absolute, and it is short enough to hold in mind at the end of a
-long run. Every line below is
-what a stuck loop reaches for when nobody is watching, which is exactly the
-condition this command runs in.
-
-- **Never push.** Not the hunt branch, not a tag, not to a fork, not with a
-  flag that makes it look like something else.
-- **Never deploy**, and never run anything the repo declares to be a deploy.
-- **Never merge into the default branch**, never rebase it, and never open a
-  merge for someone else to click. Everything this run makes stops at a local
-  branch, and Gate 2 is the owner's door.
-- **Never edit a protected path.** A REPORT-ONLY finding is filed and left
-  alone, however small the fix looks.
-- **Never decide a NEEDS-OWNER finding.** Carry it to the owner as a question,
-  never as a change already made.
-- **Never rewrite history** — no `commit --amend`, no `rebase`, no
-  `reset --hard`, no force of any kind. A history rewritten unattended destroys
-  the only record of what the run did.
-- **Never delete or disable a test**, and never weaken an assertion, skip a
-  case or mark one expected-to-fail to get a suite green.
-- **Never edit the `specs/` of another feature**, and never
-  tick a task checkbox anywhere. Checkboxes are execution state a build owns;
-  a hunt that ticks one reports work that was never done.
-- **Never edit `.claude/settings.json` or the engine map.** A loop that widens
-  its own permissions or changes which engine runs it has stopped being the
-  thing that was approved to run unattended.
 

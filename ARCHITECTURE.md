@@ -53,12 +53,13 @@ advisory. They are shell scripts registered in the client's settings
 
 | Hook | Event | What it does | Read `hooks/` |
 |------|-------|--------------|---------------|
-| `check-gate.sh` | PreToolUse on Bash | Recognises a `git commit` in the command, runs the repo's `make check`, exits 2 to refuse when it fails. Reads its own timeout from the settings and stops the checks 30 seconds early so a slow check is a loud refusal, not a silent pass. | ~310 lines |
-| `dod.sh` | Stop | The session may not end while the working tree fails its checks. Same own-clock rule. | ~160 lines |
+| `check-gate.sh` | PreToolUse on Bash | Recognises a `git commit` in the command, runs the repo's `make check`, exits 2 to refuse when it fails. Reads its own timeout from the settings and stops the checks 30 seconds early so a slow check is a loud refusal, not a silent pass. Carries the `gate1-stamp` and `evidence-merge` guards. | ~460 lines |
+| `dod.sh` | Stop | The session may not end while the working tree fails its checks. Same own-clock rule. Carries the `stop-evidence` guard and its own block counter. | ~170 lines |
 | `req-gate.sh` | Stop (`--stop`) and inside `make check` | Gate A: every non-deferred REQ-ID in `requirements.md` appears in `tasks.md`. Gate B, only when `tasks.md` has no unchecked box: every REQ-ID appears in at least one test file. | ~120 lines |
 | `autofix.sh` | PostToolUse on Edit/Write, async | Runs a formatter on the touched file if the repo has one. Never blocks. | ~25 lines |
 | `session-engines.sh` | SessionStart | Emits the active engine map as context so the session states which model fills which role. Never blocks. | ~115 lines |
-| `postcompact-policy.sh` | PostCompact | Re-injects the routing section of the policy after compaction, the whole file if the heading is missing, and says so when the file is absent. Never blocks. | ~45 lines |
+| `compact-policy.sh` | SessionStart (matcher `compact`) | Re-injects the routing section of the policy after compaction, the whole file if the heading is missing, and says so when the file is absent. Never blocks. | ~70 lines |
+| `guard-lib.sh` | Sourced by `check-gate.sh` and `dod.sh` | The warn-then-deny clock every guard shares. Sourced with `\|\| exit 2`, so a missing library is a refusal, not a fall-through to the allows. | ~190 lines |
 
 Two things to notice in `check-gate.sh`:
 
@@ -69,8 +70,55 @@ Two things to notice in `check-gate.sh`:
   repository created by a test cannot redirect the gate at the committing repo,
   and then re-exports absolute selectors when the work tree no longer leads back.
 
-A PostCompact entry (`postcompact-policy.sh`) re-injects the routing section of `sdlc-policy.md` after the client compacts the
-conversation, so the routing policy survives context loss.
+A second `SessionStart` entry, with matcher `compact`, runs `compact-policy.sh`
+after the client compacts the conversation: it re-injects the routing section of
+`sdlc-policy.md` as context, so the routing policy survives context loss. The
+first `SessionStart` entry (`session-engines.sh`) excludes `compact`.
+
+### The three touch points: state, evidence, guards
+
+`scripts/sdlc-state.sh` is the one owner of a feature's machine state, two files
+committed with the spec under `specs/<feature>/`:
+
+- `state.json`, written by `init` (the feature and its requirements, each with
+  `passes`) and `stamp` (the Gate 1 approval and the sha of the approved spec).
+  `stamp-state` reads it back as `none`, `invalid`, `stale` or `ok`.
+- `evidence.json`, written by `evidence` (runs `make check` then `make test` and
+  keeps their exit codes, the coverage of each requirement and the evidence
+  tree) and `record` (the verifier's verdict, and the ui-tester's in a webapp
+  repository). `evidence` is the only writer of `passes`. `evidence-state`
+  reads the file back, and `status` prints one line per feature.
+
+Each file carries a `digest`, the sha256 of the document with the digest removed
+and its keys sorted. It is not a signature: it catches a hand edit and a
+truncated file, and a reader that finds it wrong treats the file as invalid.
+Evidence is fresh against an evidence tree, the tree with those two files
+removed, so committing the evidence does not make it stale, while any change to
+the code does.
+
+Three guards read those files at the points where work changes hands:
+
+| Guard | Where it sits | Refuses when |
+|-------|---------------|--------------|
+| `gate1-stamp` | `check-gate.sh`, on a commit landing on `sdlc/<feature>`, before the docs-only shortcut | the stamp is missing, invalid or stale, or the branch resolves to no feature (`sdlc/hunt-*` and `sdlc/rca-*` are exempt) |
+| `evidence-merge` | `check-gate.sh`, on a merge-family command (`merge`, `pull`, `rebase`, `reset`) landing on the default branch and naming an `sdlc/` ref | the evidence is missing, invalid, stale or red |
+| `stop-evidence` | `dod.sh`, at Stop on `sdlc/<feature>` with every box ticked, before the clean-tree allow | the same |
+
+Each guard warns for 14 days, then denies. Its clock is
+`~/.claude/sdlc-guards/<guard>.since`, the epoch second the warn window opened,
+seeded by `install.sh` and kept beside a `<guard>.log`; `hooks/guard-lib.sh`
+reads it. Once that directory exists, a clock that is missing, edited or in the
+future is a deny, so deleting it cannot restart the window.
+`SDLC_GUARD_MODE=warn` or `SDLC_GUARD_MODE=deny` overrides the clock. A
+PreToolUse warning is context only, never a permission decision.
+
+The Stop gate keeps its own count of consecutive blocks per session under
+`~/.claude/sdlc-guards/stop/` and stops blocking at `SDLC_STOP_BLOCK_CAP`
+(default 6), below the client's own cap, so its UNVERIFIED line is seen.
+
+The stamp is the owner's act: the snippet's `permissions.ask` rules make
+`sdlc-state.sh stamp`, and an `Edit` or `Write` on a `specs/*/state.json`, ask
+first. That is a tripwire, not a wall: a shell redirection raises no prompt.
 
 ### Routing, not enforcement: the engine-map mod
 

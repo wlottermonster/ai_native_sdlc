@@ -263,4 +263,84 @@ req "REQ-ENGINE-026"
 assert_no_grep 'sdlc_llm' "$closing"
 assert_no_grep 'sdlc_llm' "$out"
 
+# ---------------------------------------------------------------------------
+req "REQ-TOUCH-023"
+# The installer creates the guards directory and seeds a .since clock for each
+# guard that has none; an existing clock and an existing log are left alone.
+d=$(install_fixture "$tmproot")
+h=$(fresh_home "$tmproot")
+out="$tmproot/guards.out"
+before=$(date +%s)
+run_install "$d" "$h" "$scanroot" "$out"
+after=$(date +%s)
+assert_rc 0 "$out"
+gd="$h/.claude/sdlc-guards"
+assert_file "$gd"
+for g in gate1-stamp evidence-merge stop-evidence; do
+  assert_grep '^[0-9]+$' "$gd/$g.since"
+  v=$(tr -d '[:space:]' < "$gd/$g.since" 2>/dev/null)
+  case "$v" in ''|*[!0-9]*) v=0 ;; esac
+  if [ "$v" -ge "$before" ] && [ "$v" -le "$after" ]; then
+    _test_pass "$g.since holds the install time ($v)"
+  else
+    _test_fail "$g.since holds $v, not a time between $before and $after"
+  fi
+done
+assert_grep 'sdlc-guards' "$out"
+# The closing text names the warn window and the override.
+assert_fgrep 'SDLC_GUARD_MODE=warn' "$out"
+assert_grep '14 days' "$out"
+
+# Re-run over one kept clock and one log: both survive; the others are seeded.
+h=$(fresh_home "$tmproot")
+gd="$h/.claude/sdlc-guards"
+mkdir -p "$gd"
+printf '123\n' > "$gd/gate1-stamp.since"
+printf 'an earlier warning line\n' > "$gd/gate1-stamp.log"
+out="$tmproot/guards2.out"
+run_install "$d" "$h" "$scanroot" "$out"
+assert_rc 0 "$out"
+assert_grep '^123$' "$gd/gate1-stamp.since"
+assert_grep '^an earlier warning line$' "$gd/gate1-stamp.log"
+count_into "$gd/gate1-stamp.log" '.' "$tmproot/guards2.n"
+assert_grep '^1$' "$tmproot/guards2.n"
+assert_grep '^[0-9]{6,}$' "$gd/evidence-merge.since"
+assert_grep '^[0-9]{6,}$' "$gd/stop-evidence.since"
+# A second run over a fully seeded directory changes no clock.
+cp "$gd/evidence-merge.since" "$tmproot/em.before"
+run_install "$d" "$h" "$scanroot" "$tmproot/guards3.out"
+assert_rc 0 "$tmproot/guards3.out"
+if cmp -s "$tmproot/em.before" "$gd/evidence-merge.since"; then
+  _test_pass "a re-install keeps an existing clock byte for byte"
+else
+  _test_fail "a re-install rewrote evidence-merge.since"
+fi
+assert_grep '^123$' "$gd/gate1-stamp.since"
+
+# ---------------------------------------------------------------------------
+req "REQ-TOUCH-033"
+# The superseded PostCompact re-injection is reported, never removed: a HOME
+# still holding hooks/postcompact-policy.sh gets a warning naming the path and
+# telling the owner to delete it and its settings entry (a re-merge would
+# otherwise run both re-injections), and the file is still there afterwards.
+d=$(install_fixture "$tmproot")
+h=$(fresh_home "$tmproot")
+mkdir -p "$h/.claude/hooks"
+printf 'old re-injection\n' > "$h/.claude/hooks/postcompact-policy.sh"
+out="$tmproot/stale-hook.out"
+run_install "$d" "$h" "$scanroot" "$out"
+assert_rc 0 "$out"
+assert_fgrep "WARNING: stale hook $h/.claude/hooks/postcompact-policy.sh from an older version — delete it yourself, and remove the PostCompact entry from ~/.claude/settings.json" "$out"
+assert_file "$h/.claude/hooks/postcompact-policy.sh"
+assert_grep '^old re-injection$' "$h/.claude/hooks/postcompact-policy.sh"
+# The closing steps tell the owner to delete a leftover PostCompact entry
+# after the merge, because the SessionStart compact entry replaces it.
+assert_grep 'PostCompact entry, delete it after the merge' "$out"
+# Without the file: no stale-hook warning.
+h=$(fresh_home "$tmproot")
+out="$tmproot/no-stale-hook.out"
+run_install "$d" "$h" "$scanroot" "$out"
+assert_rc 0 "$out"
+assert_no_grep 'WARNING: stale hook' "$out"
+
 finish

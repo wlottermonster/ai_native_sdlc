@@ -85,6 +85,9 @@
 #   REQ-HUNT-075  ONE vocabulary for a matrix row's two states
 #   REQ-HUNT-076  a refusal enumeration that states no count it cannot keep
 #   REQ-HUNT-077  build.md documents the merge-back hunt.md cites
+# ...and the REORDER, so the head of the file survives compaction:
+#   REQ-TOUCH-031  section H and the STOPPED rule end within the first 16,000 bytes
+#   REQ-TOUCH-032  sections A to H each present exactly once, pins all still hold
 #
 # These are read-only assertions against the shipped prompt file; nothing here
 # writes outside the repo.
@@ -155,9 +158,11 @@ assert_fgrep 'Run `make check` yourself and read its exit code before the first 
 assert_fgrep 'RED baseline' "$hunt"
 assert_fgrep 'the whole job of the run' "$hunt"
 assert_fgrep 'never a starting point to hunt from' "$hunt"
+# Section F, now above A, also names a red baseline; the order pins section
+# A's own sentence, not the first line that happens to say the words.
 assert_order "$hunt" \
   '^## A\. Refusing to start$' \
-  'RED baseline' \
+  'A RED baseline is not something to hunt from' \
   'the whole job of the run' \
   '^## B\. State — the hunt file$'
 
@@ -557,9 +562,10 @@ assert_fgrep 'convergence line' "$hunt"
 assert_fgrep 'the count of confirmed FIXABLE findings' "$hunt"
 assert_fgrep 'Computed and written, never felt' "$hunt"
 assert_order "$hunt" \
-  '^## E\. Fixing, and the flywheel$' \
+  '^## H\. What it must never do$' \
   '^## F\. Convergence, the budget, and stopping$' \
-  'convergence line'
+  'convergence line' \
+  '^## A\. Refusing to start$'
 
 # ---------------------------------------------------------------------------
 req "REQ-HUNT-031"
@@ -686,9 +692,10 @@ assert_fgrep 'Never merge into the default branch' "$hunt"
 assert_fgrep 'Never edit a protected path' "$hunt"
 assert_fgrep 'Never decide a NEEDS-OWNER finding' "$hunt"
 assert_order "$hunt" \
-  '^## G\. The verdict$' \
+  '^## Arguments$' \
   '^## H\. What it must never do$' \
-  'Never push'
+  'Never push' \
+  '^## F\. Convergence, the budget, and stopping$'
 
 # ---------------------------------------------------------------------------
 req "REQ-HUNT-063"
@@ -754,12 +761,14 @@ assert_fgrep 'a resumed run cannot produce a count for a round it did not run' "
 # ...and an absent `STOPPED:` line is the normal state of a running hunt, never
 # read as the missing section that stops the run.
 assert_fgrep 'Its ABSENCE is the normal state of a running hunt' "$hunt"
-# Both are declared in section B before section F ever writes to them.
+# Both are declared in section B's file shape. Section F, which writes them,
+# sits near the top of the file since the reorder (REQ-TOUCH-031), so the order
+# pinned is F's heading, then B's, then the two declarations inside B.
 assert_order "$hunt" \
+  '^## F\. Convergence, the budget, and stopping$' \
   '^## B\. State — the hunt file$' \
   '^STOPPED: <reason>$' \
-  '^## CONVERGENCE LOG$' \
-  '^## F\. Convergence, the budget, and stopping$'
+  '^## CONVERGENCE LOG$'
 
 # ---------------------------------------------------------------------------
 # The seed carve-out: without it a file seeded before round 1 reads as one
@@ -1022,5 +1031,85 @@ assert_grep "the owner.s kill switch" "$hunt"
 assert_order "$hunt" '^### Filing$' 'kill switch' '^### NEEDS-OWNER leaves as one batch$'
 # ...and a repo with declared lanes takes one area per round, keeping the cap.
 assert_fgrep 'takes ONE area row rather than three' "$hunt"
+
+# ---------------------------------------------------------------------------
+# The reorder. After compaction the client keeps only the head of a long
+# command, so the two things an unattended run must never lose — what it must
+# never do, and when and how it stops — sit at the top of the file.
+
+# section_end_offset <file> <start-ERE> <end-ERE> — the byte offset at which
+# the block opened by the first line matching <start-ERE> ends: the first line
+# after it matching <end-ERE>, or the end of the file. Prints nothing when the
+# start line is absent, so the numeric test below fails rather than passes.
+section_end_offset() {
+  LC_ALL=C awk -v s="$2" -v e="$3" '
+    found && $0 ~ e { print off; done = 1; exit }
+    $0 ~ s { found = 1 }
+    { off += length($0) + 1 }
+    END { if (found && !done) print off }
+  ' "$1"
+}
+
+# move_section_to_end <file> <heading-ERE> — the file with the `## ` section
+# whose heading matches moved to the end, the order this command used to have.
+move_section_to_end() {
+  awk -v s="$2" '
+    /^## / { insec = ($0 ~ s) }
+    { if (insec) moved = moved $0 "\n"; else print }
+    END { printf "%s", moved }
+  ' "$1"
+}
+
+h_start='^## H[.] What it must never do$'
+h_end='^## '
+stop_start='^When a stop condition is met, write a `STOPPED: <reason>` line'
+stop_end='^##'
+
+req "REQ-TOUCH-031"
+# Section H ends within the first 16,000 bytes...
+h_off=$(section_end_offset "$hunt" "$h_start" "$h_end")
+printf '     section H ends at byte %s\n' "$h_off"
+assert_exit 0 test "$h_off" -le 16000
+# ...and so does the stop-reason list with its `STOPPED: <reason>` rule, which
+# follows the list and closes it.
+stop_off=$(section_end_offset "$hunt" "$stop_start" "$stop_end")
+printf '     STOPPED rule ends at byte %s\n' "$stop_off"
+assert_exit 0 test "$stop_off" -le 16000
+assert_order "$hunt" \
+  'These are the permitted stop reasons' \
+  '^- \*\*owner stop\*\*' \
+  "$stop_start"
+# The new order: Arguments, H, F (the stop rules with it), then A to E, then G.
+assert_order "$hunt" \
+  '^## Arguments$' \
+  '^## H\. What it must never do$' \
+  '^## F\. Convergence, the budget, and stopping$' \
+  '^## A\. Refusing to start$' \
+  '^## B\. State — the hunt file$' \
+  '^## C\. The round, and the refutation gate$' \
+  '^## D\. Classifying a finding$' \
+  '^## E\. Fixing, and the flywheel$' \
+  '^## G\. The verdict$'
+# Mutation: the old order, H moved back to the end, must break the budget —
+# a measurement that passes on the file it was meant to reject proves nothing.
+move_section_to_end "$hunt" '^## H[.] ' > "$tmpdir/hunt-h-last.md"
+mut_off=$(section_end_offset "$tmpdir/hunt-h-last.md" "$h_start" "$h_end")
+printf '     mutant (H last): section H ends at byte %s\n' "$mut_off"
+assert_exit 1 test "$mut_off" -le 16000
+# ...and so must F moved back below E, which carries the stop rules with it.
+move_section_to_end "$hunt" '^## F[.] ' > "$tmpdir/hunt-f-last.md"
+mut_off=$(section_end_offset "$tmpdir/hunt-f-last.md" "$stop_start" "$stop_end")
+printf '     mutant (F last): STOPPED rule ends at byte %s\n' "$mut_off"
+assert_exit 1 test "$mut_off" -le 16000
+
+req "REQ-TOUCH-032"
+# Each of sections A to H is present EXACTLY ONCE under its own heading: the
+# reorder moved whole sections and split none of them into two. Every sentence
+# the assertions above pin is still present — they ran against this same file.
+for letter in A B C D E F G H; do
+  count_into "$hunt" "^## ${letter}\. " "$tmpdir/heading-${letter}.count"
+  printf '     ## %s. once?\n' "$letter"
+  assert_grep '^1$' "$tmpdir/heading-${letter}.count"
+done
 
 finish

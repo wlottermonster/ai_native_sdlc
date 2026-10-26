@@ -107,3 +107,10 @@ export function variableNotice(value: string | undefined, n: Notices): string | 
   const text = subagentVariableNotice(value)
   return n.once(`variable\n${VARIABLE}`, text) ? text : undefined
 }
+
+// A turn.start carrying an `agentId` is a subagent's or teammate's turn, not
+// the main loop's: the status line describes the main loop, so such a turn is
+// passed on untouched (REQ-TOUCH-037).
+export function isSubagentTurn(e: { agentId?: string }): boolean {
+  return typeof e.agentId === 'string'
+}

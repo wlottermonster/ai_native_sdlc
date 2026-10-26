@@ -4,7 +4,7 @@
 // env.get and fs.read and recording ui.status).
 import { test, expect, mock } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { matches, statusLine, computeStatus, subagentVariableNotice, variableNotice, type StatusDeps } from './status.ts'
+import { matches, statusLine, computeStatus, subagentVariableNotice, variableNotice, isSubagentTurn, type StatusDeps } from './status.ts'
 import { createChain, type ChainState } from './chain.ts'
 import { createNotices } from './notices.ts'
 import { parseMap } from './map.ts'
@@ -200,10 +200,10 @@ test('REQ-MOD-020 the variable unset or empty gives nothing', () => {
 
 // --- through the engine ------------------------------------------------------
 
-type Seen = { status: (string | undefined)[]; toasts: string[]; logs: string[] }
+type Seen = { status: (string | undefined)[]; toasts: string[]; logs: string[]; turns: unknown[] }
 
 function engineBeneath(on: On, model: string, files: Record<string, string>): Seen {
-  const seen: Seen = { status: [], toasts: [], logs: [] }
+  const seen: Seen = { status: [], toasts: [], logs: [], turns: [] }
   on('session.model', () => ({ value: model }))
   on('fs.read', ($, e) => {
     const text = files[e.path]
@@ -213,7 +213,7 @@ function engineBeneath(on: On, model: string, files: Record<string, string>): Se
   on('ui.toast', ($, e) => { seen.toasts.push(e.text); return { value: undefined } })
   on('ui.log', ($, e) => { seen.logs.push(e.text); return { value: undefined } })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
-  on('turn.start', ($, e) => ({ turnId: e.turnId }))
+  on('turn.start', ($, e) => { seen.turns.push(e); return { turnId: e.turnId } })
   return seen
 }
 
@@ -246,6 +246,33 @@ test('REQ-MOD-016 REQ-MOD-017 turn.start through the engine flags a mismatch on 
   expect(r.turnId).toBe('t1')
   expect(seen.status).toEqual([`JUDGE MISMATCH: claude-testbuild-9-1 is not testjudge-9 | ${KIT_LINE}`])
   expect(seen.toasts).toEqual([])
+})
+
+test('REQ-TOUCH-037 REQ-MOD-016 turn.start for a subagent turn passes the event on untouched and leaves the status line alone', async ($, on) => {
+  mock.env(on, { HOME })
+  const seen = engineBeneath(on, 'claude-testbuild-9-1', { [MAP]: KIT_MAP })
+
+  const r = await $.turn.start({ text: 'sub task', turnId: 't7', agentId: 'agent-7' })
+
+  expect(r.turnId).toBe('t7')
+  expect(seen.turns).toEqual([{ text: 'sub task', turnId: 't7', agentId: 'agent-7' }])
+  expect(seen.status).toEqual([])
+  expect(seen.toasts).toEqual([])
+})
+
+test('REQ-TOUCH-037 REQ-MOD-016 turn.start without an agentId still sets the status line', async ($, on) => {
+  mock.env(on, { HOME })
+  const seen = engineBeneath(on, 'claude-testjudge-9-1', { [MAP]: KIT_MAP })
+
+  await $.turn.start({ text: 'hello', turnId: 't8' })
+
+  expect(seen.status).toEqual([`judge: testjudge-9 | ${KIT_LINE}`])
+})
+
+test('REQ-TOUCH-037 REQ-MOD-016 isSubagentTurn is true only for an event carrying an agentId', () => {
+  expect(isSubagentTurn({ text: '', turnId: 't', agentId: 'agent-1' })).toBe(true)
+  expect(isSubagentTurn({ text: '', turnId: 't' })).toBe(false)
+  expect(isSubagentTurn({ text: '', turnId: 't', agentId: undefined })).toBe(false)
 })
 
 test('REQ-MOD-020 session.start through the engine with the variable unset says nothing', async ($, on) => {

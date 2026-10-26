@@ -77,7 +77,7 @@ payload() {
 
 # --- emission --------------------------------------------------------------
 # REQ-ENGINE-034: with jq, the payload is turned into a JSON string by `jq -Rs`
-# (the same idiom the PostCompact entry in settings/hooks-snippet.json uses).
+# (the same idiom compact-policy.sh uses).
 # Without jq, the object is hand-built. Hand-building does not escape; it drops
 # any line carrying a character that would need escaping (a double quote, a
 # backslash, or a control character), so the result is always ONE valid JSON

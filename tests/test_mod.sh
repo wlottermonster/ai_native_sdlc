@@ -287,4 +287,31 @@ assert_rc nonzero "$out"
 assert_fgrep 'tool.call' "$out"
 assert_no_grep '^check: OK' "$out"
 
+# --- REQ-TOUCH-038: both mod checks pass on the installed build -------------
+req "REQ-TOUCH-038"
+out="$tmpdir/touch038.validate"
+capture "$out" "$modcheck" validate
+assert_rc 0 "$out"
+assert_fgrep 'Validation passed' "$out"
+# The test half was run once above (REQ-MOD-028); its exit code is read here.
+assert_rc 0 "$tmpdir/plugin-test"
+assert_grep '^ *0 fail$' "$tmpdir/plugin-test"
+
+# --- REQ-TOUCH-039: the re-probe record in the feature's design -------------
+# The section from its heading to the next `## ` heading; each heading of the
+# record exactly once in it, and the build id line.
+req "REQ-TOUCH-039"
+design="$TEST_REPO/specs/three-touch-points-phase-1/design.md"
+section="$tmpdir/reprobe.md"
+sed -n '/^## Re-probe record$/,/^## /p' "$design" > "$section"
+assert_grep '^Build: 2\.1\.310 \(' "$section"
+for heading in \
+  '^### agent\.spawn on resume$' \
+  '^### turn\.start for subagent turns$' \
+  '^### tool\.check throwing with and without \.catch$' \
+  '^### the per-hook budget$'; do
+  count_into "$section" "$heading" "$section.n"
+  assert_grep '^1$' "$section.n"
+done
+
 finish

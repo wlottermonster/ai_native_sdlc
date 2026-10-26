@@ -1,0 +1,224 @@
+{
+  "created_at": "2026-10-25T23:31:11Z",
+  "digest": "9b8b6bba38c2b1f1538db6a47bb1a4c3ab83161fd06f4abb3374ef28cbf3510e",
+  "feature": "three-touch-points-phase-1",
+  "gate1": {
+    "approved_at": "2026-10-25T23:31:11Z",
+    "spec_sha": "c2207b653f0844c71b2067527cdc77542d5cd4600ad2586489f90b1eeb5fac40"
+  },
+  "requirements": {
+    "REQ-TOUCH-001": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-002": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-003": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-004": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-005": {
+      "passes": true,
+      "verify": "integration"
+    },
+    "REQ-TOUCH-006": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-007": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-008": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-009": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-010": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-011": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-012": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-013": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-014": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-015": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-016": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-017": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-018": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-019": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-020": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-021": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-022": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-023": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-024": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-025": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-026": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-027": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-028": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-029": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-030": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-031": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-032": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-033": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-034": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-035": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-036": {
+      "passes": false,
+      "verify": "deferred"
+    },
+    "REQ-TOUCH-037": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-038": {
+      "passes": true,
+      "verify": "integration"
+    },
+    "REQ-TOUCH-039": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-040": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-041": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-042": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-043": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-044": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-045": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-046": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-047": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-048": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-049": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-050": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-051": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-052": {
+      "passes": true,
+      "verify": "unit"
+    },
+    "REQ-TOUCH-053": {
+      "passes": true,
+      "verify": "unit"
+    }
+  },
+  "schema": 1
+}

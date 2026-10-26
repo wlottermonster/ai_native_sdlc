@@ -12,12 +12,20 @@ memory of past sessions:
 2. Run `~/.claude/hooks/req-gate.sh --report` and
    `~/.claude/scripts/trace-matrix.sh`; list `sdlc/*` branches
    (`git branch --list 'sdlc/*'`).
+   Run `~/.claude/scripts/sdlc-state.sh status` as ground truth for each
+   feature's stamp and evidence. In a repository whose `TEST_PROFILE` is
+   `webapp`, for each feature whose evidence carries no ui-tester verdict,
+   dispatch the `ui-tester` agent and record its verdict with
+   `sdlc-state.sh record <feature> ui-tester <verdict> "<note>"` on the feature
+   branch before the walk.
 3. Present IN CHAT using the decision-first format (see the Decision Protocol
    in sdlc-policy.md): TL;DR first, then ONLY what needs the owner's judgment —
    assumptions recorded during the build (from design.md "## Assumptions"),
    verifier notes, amber/red matrix rows, parked items with options. Full
    detail last, as optional reading.
-4. Walk decisions ONE AT A TIME, each with a concrete example of its effect
+4. Walk no branch whose evidence is not current and green: name it, with
+   `sdlc-state.sh evidence <feature>` on that branch as the way back in.
+   Walk decisions ONE AT A TIME, each with a concrete example of its effect
    and a recommendation stated first. For each branch the owner explicitly
    approves: merge to the main branch and run the checks once more. Push ONLY
    on an explicit yes — push = deploy on the repos the repo's CLAUDE.md names.

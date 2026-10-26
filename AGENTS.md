@@ -104,6 +104,45 @@ protected paths: specs/_shipped/**, specs/_hunt/**
   The Codex guard reads both zone-file styles (`.claude/.night-lock` with
   `.claude/hooks/no_fix_zones.txt`, and `.sdlc/night-lock` with
   `.sdlc/protected-paths.txt`), proven by live `codex exec` denial probes.
+- **The stamp is the owner's act; evidence has one writer.** A feature's
+  `specs/<feature>/state.json` carries the Gate 1 stamp: never run
+  `sdlc-state.sh stamp` without the owner's explicit approval at Gate 1, and
+  never edit the file by hand. `specs/<feature>/evidence.json` is written only
+  by `sdlc-state.sh evidence` (and `record` for a verdict), never by hand. Three
+  guards read them: `gate1-stamp` on a commit to `sdlc/*`, `evidence-merge` on
+  a merge into the default branch, `stop-evidence` at Stop. Each warns for 14
+  days from its clock in `~/.claude/sdlc-guards/`, then denies;
+  `SDLC_GUARD_MODE=warn` keeps it warning. After a compaction the routing
+  policy returns through the `SessionStart` entry with matcher `compact`
+  (`compact-policy.sh`).
+- **Freshness is an evidence tree, approval is a hash of the requirements.**
+  `evidence.json` records the git tree with the two state files removed, so
+  committing the evidence never stales it, a rebase that changes nothing keeps
+  it, and any content change kills it. The Gate 1 stamp hashes
+  `requirements.md` alone: design.md gains assumptions during a build and
+  tasks.md gains ticks, and neither is what the owner approved.
+- **A guard's clock is seeded at install and only an absent directory
+  self-seeds (all three clocks at once).** Once the directory exists, a
+  missing, edited or future `.since` denies; deleting a clock never restarts
+  the grace window. Tests point `SDLC_GUARDS_DIR` at a throwaway directory,
+  which exists and is empty, so inside the suite a guard denies unless the
+  test seeds a clock or sets `SDLC_GUARD_MODE`.
+- **The gate decides on the branch the command lands on, one repository per
+  command.** A literal `checkout`/`switch` target is followed; a target it
+  cannot read, a `cd` between its git commands, or a rebase/pull with an
+  option outside the known list is a refusal under the guard's mode, never a
+  guess. Redirections are not words. A warning from a PreToolUse hook is
+  `additionalContext` only: a `permissionDecision` would approve the whole
+  Bash call, including a stamp chained into it.
+- **The Stop gate keeps its own block counter below the client's cap** (6
+  under 8) so the UNVERIFIED line is actually seen; one exit trap resets it on
+  any exit 0; `stop_hook_active` allows nothing by itself. An unwritable
+  counter is treated as the cap reached, loudly.
+- **A `tool.check` mod hook that throws without `.catch` is skipped and the
+  tool runs (fail-open); with a `.catch` that answers deny, the tool is
+  refused (fail-closed). The per-hook budget is 10 s and `$.clock.sleep`
+  counts.** Probed on build 2.1.310 (re-probe record in the shipped spec);
+  this is the fact phase 3 decides the gating question on.
 
 ## Two repositories: where a push goes
 

@@ -24,6 +24,10 @@
 #   - other top-level keys: added when absent; when both sides are objects they
 #     are merged key by key with the EXISTING value winning; an existing value
 #     is never overwritten.
+#   - permissions: the ask, allow and deny lists are unioned — every existing
+#     rule is kept in its place and each snippet rule not already present is
+#     appended once, so a snippet rule never removes or replaces one of yours.
+#     Any other permissions key (defaultMode, say) is added only when absent.
 #   - the snippet's "//" key is its documentation for a reader, not a setting,
 #     and is not copied.
 # Refuses (exit 1, nothing on stdout) when either input is not valid JSON or
@@ -85,12 +89,24 @@ merged=$(printf '%s' "$current" | jq --slurpfile snip "$snippet" '
   | . as $cur
   # top-level keys other than hooks and the comment: add when absent, merge
   # objects with the existing side winning, never overwrite.
-  | reduce ($s | keys_unsorted[] | select(. != "//" and . != "hooks")) as $k
+  | reduce ($s | keys_unsorted[] | select(. != "//" and . != "hooks" and . != "permissions")) as $k
       ($cur;
        if has($k) | not then .[$k] = $s[$k]
        elif (.[$k] | type) == "object" and ($s[$k] | type) == "object"
          then .[$k] = ($s[$k] * .[$k])
        else . end)
+  # permissions: union the ask/allow/deny lists, existing rules first and in
+  # place, each missing snippet rule appended once; other keys only when absent.
+  | if ($s.permissions | type) == "object" and ((.permissions // {}) | type) == "object" then
+      .permissions = (reduce ($s.permissions | keys_unsorted[]) as $pk
+        (.permissions // {};
+         if (["ask", "allow", "deny"] | index([$pk])) != null
+            and ($s.permissions[$pk] | type) == "array"
+            and ((.[$pk] // []) | type) == "array"
+         then .[$pk] = (reduce $s.permissions[$pk][] as $r (.[$pk] // []; if index([$r]) then . else . + [$r] end))
+         elif has($pk) then .
+         else .[$pk] = $s.permissions[$pk] end))
+    else . end
   # hooks: keep every existing entry; add only commands not yet registered.
   | if ($s.hooks | type) == "object" then
       .hooks = (reduce ($s.hooks | keys_unsorted[]) as $ev

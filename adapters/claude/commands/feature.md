@@ -11,7 +11,8 @@ Follow these phases in order. Announce each phase transition in one line.
    unit | integration | e2e | deferred), `design.md` (call out anything
    irreversible), and `tasks.md` (every task lists the REQ-IDs it implements;
    1-5 IDs per task). Respect the repo's TEST_PROFILE: never assign
-   `verify: e2e` in a lib/api repo.
+   `verify: e2e` in a lib/api repo. Once the three files are written,
+   run `~/.claude/scripts/sdlc-state.sh init <feature>`.
 2. **Spec review.** Spawn the `spec-reviewer` agent on the three files. Apply
    accepted findings. Run `~/.claude/hooks/req-gate.sh --report` and fix any
    Gate A misses.
@@ -24,6 +25,11 @@ Follow these phases in order. Announce each phase transition in one line.
    Open questions are asked one at a time — plain sentence, concrete example,
    recommendation first — never as a dumped list. The files are the record;
    the chat is the review. Do not proceed without an explicit yes.
+   Only after the owner's explicit approval at Gate 1, run
+   `~/.claude/scripts/sdlc-state.sh stamp <feature>` (the owner answers its
+   permission prompt — the stamp is the owner's act, never run before the
+   yes), and commit the spec and the stamp before the build phase: the commit
+   gate refuses a commit on `sdlc/<feature>` that has no current stamp.
 4. **Implement.** For each task in `tasks.md`, spawn the `implementer` agent
    with ONLY that task's REQ-IDs, quoting them verbatim from requirements.md
    (re-read the file first — never from memory). Sequential by default;

@@ -34,7 +34,7 @@ mod="$repo/adapters/claude/skills/sdlc-engine-map"
 # applies with and without the mod, and that the mod routes, never enforces.
 req "REQ-MOD-023"
 
-# The rendered copy is the one sessions read and PostCompact re-injects: the
+# The rendered copy is the one sessions read and compact-policy.sh re-injects: the
 # sentences must sit after the routing heading the hook cuts at.
 for f in "$policy_src" "$policy"; do
   assert_fgrep 'with the mod loaded, a change to the map applies at the next dispatch' "$f"
@@ -70,7 +70,7 @@ done
 assert_grep '^### Routing, not enforcement: the engine-map mod$' "$arch"
 # The backticks are Markdown code spans, not command substitution.
 # shellcheck disable=SC2016
-assert_order "$arch" '^## 3\. Enforcement: the hooks$' '^\| `postcompact-policy\.sh` \|' \
+assert_order "$arch" '^## 3\. Enforcement: the hooks$' '^\| `compact-policy\.sh` \|' \
   '^### Routing, not enforcement: the engine-map mod$' '^## 4\. '
 assert_no_grep '^\| `?sdlc-engine-map' "$arch"
 awk '/^### Routing, not enforcement: the engine-map mod$/ { inside = 1; next }

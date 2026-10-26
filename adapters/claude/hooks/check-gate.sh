@@ -16,6 +16,18 @@
 # when they did not finish. A loud refusal, never a silent allow.
 set -u
 
+# The guards' shared library (REQ-TOUCH-047). Without `-e` a failed source
+# would leave the guard functions undefined and fall through to the allows,
+# so a library that cannot be sourced is a refusal. The directory is taken by
+# parameter expansion, not dirname(1): this runs before any tool is proven to
+# be on PATH, and a missing dirname would turn into a refusal of every command.
+case "$0" in */*) guard_lib="${0%/*}/guard-lib.sh" ;; *) guard_lib="./guard-lib.sh" ;; esac
+# shellcheck source-path=SCRIPTDIR source=guard-lib.sh
+. "$guard_lib" || {
+  echo "COMMIT BLOCKED by AI-Native SDLC gate: cannot source the guard library $guard_lib — refusing rather than allowing. Re-run install.sh." >&2
+  exit 2
+}
+
 # Seconds the gate stops the checks BEFORE the hook's own timeout would fire.
 # The margin is what turns a silent harness timeout into a refusal this script
 # gets to write; it has to cover killing the checks and printing the message.
@@ -113,29 +125,323 @@ scan=$(printf '%s' "$cmd" | awk '
   END { if (skip == 1) exit 3 }
 ') || scan="$cmd"
 
-printf '%s' "$scan" | grep -qE "$COMMIT_RE" || exit 0
+is_commit=0
+printf '%s' "$scan" | grep -qE "$COMMIT_RE" && is_commit=1
+
+# --- the command's shapes (REQ-TOUCH-017, 048, 049) --------------------------
+# Besides the commit shape, the gate decides on two more, read from the same
+# stripped text:
+#   merge family — `git` as a command word, then (past `-C <dir>`, `-c k=v`
+#     and other options) `merge`, `pull`, `rebase` or `reset`, with at least
+#     one argument in that simple command naming a ref under sdlc/
+#     (`sdlc/<x>`, `<remote>/sdlc/<x>`, `refs/heads/sdlc/<x>`, quoted or not);
+#   branch change — `git checkout` / `git switch` BEFORE the commit or merge:
+#     the branch the command lands on is the last such literal target, else the
+#     current branch. A target this parser cannot read (a variable, `-`,
+#     `@{-1}`, a sha, `--detach`, an option it does not know) is reported as
+#     `bad`, and the guard refuses under its mode.
+# One pass prints tab-separated lines, every field non-empty ("-" for none):
+#   C   <pos>                    the commit (first match of the commit shape)
+#   LC  <kind> <value>           where a commit lands: cur|new|lit|bad (one
+#                                line per commit in the command)
+#   LM  <i> <kind> <value>       where merge-family command <i> lands
+#   R   <i> <ref>                an sdlc/ ref named by merge-family command <i>
+#   LO  <i> <sub> <option>       pull/rebase <i> carries an option word outside
+#                                the closed list the gate knows
+#   P   <i> <word> / PD <i>      with LO: each positional of <i> (PD: dynamic)
+#   XD  commit|merge             the commits/merges do not share one cd/-C
+#   CD  <path>                   the last cd before the command decided on
+#   MG  <dir>                    `git -C <dir>` of that merge (no commit)
+# The command decided on is the commit when there is one (so the cd it follows
+# is the one it always followed, REQ-GATE-012), else the first merge.
+# Redirections and their targets are not words; `pull <remote> <ref>` names
+# `<remote>/<ref>`; `rebase <upstream> <branch>` lands on <branch>; the values
+# of message/strategy/exec options are not refs.
+shapes_rc=0
+shapes=$(printf '%s' "$scan" | perl -e '
+  local $/; my $s = <STDIN>; $s = "" unless defined $s;
+  my $q = qr/"[^"]*"|\x27[^\x27]*\x27/;
+  # Global options before the subcommand: `-C <d>`, `-c k=v`, the two-word
+  # long ones (`--git-dir <d>` and kin), and any `--opt` / `--opt=value`.
+  my $opts = qr/(?:[ \t]+(?:-[Cc][ \t]+(?:$q|[^\s;&|()]+)|--(?:git-dir|work-tree|namespace|exec-path|super-prefix)[ \t]+(?:$q|[^\s;&|()]+)|--?[A-Za-z][^\s;&|()]*))*/;
+  my $cre = qr/(?:^|[^A-Za-z0-9_.\-])git[ \t](?:[^|;&\n]*[ \t])?commit(?:[ \t;&|)"\x27`]|$)/m;
+  my $gre = qr/(?:^|[^A-Za-z0-9_.\-])git($opts)[ \t]+(merge|pull|rebase|reset|checkout|switch)(?=[\s;&|)"\x27`]|\z)/m;
+  # A redirection operator: at the start of a word an fd number may lead it
+  # (`2>`, `2>&`); inside a word it ends the word (`foo>bar`).
+  my $rstart = qr/\A\d*(?:<<<|<<-|<<|<>|>>|>\||>&|<&|&>>|&>|<|>)/;
+  my $rmid = qr/\A(?:<<<|<<-|<<|<>|>>|>\||>&|<&|<|>)/;
+  # words <from> — the shell words from offset <from> to the end of that simple
+  # command: [text, dynamic], quotes removed, dynamic when it holds $ or `.
+  # A redirection and the word it redirects to are not words of the command.
+  sub words {
+    my ($i) = @_; my $n = length $s; my @w; my ($cur, $in, $dyn, $skip) = ("", 0, 0, 0);
+    my $end = sub { if ($in) { if ($skip) { $skip = 0 } else { push @w, [$cur, $dyn] } } ($cur, $in, $dyn) = ("", 0, 0) };
+    while ($i < $n) {
+      my $c = substr($s, $i, 1);
+      if ($c eq "\x27") {
+        my $j = index($s, "\x27", $i + 1); $j = $n if $j < 0;
+        $cur .= substr($s, $i + 1, $j - $i - 1); $in = 1; $i = $j + 1; next;
+      }
+      if ($c eq "\"") {
+        my $j = $i + 1;
+        while ($j < $n) {
+          my $d = substr($s, $j, 1);
+          if ($d eq "\\") { $cur .= substr($s, $j + 1, 1); $j += 2; next }
+          last if $d eq "\"";
+          $dyn = 1 if $d eq "\$" || $d eq "`";
+          $cur .= $d; $j++;
+        }
+        $in = 1; $i = $j + 1; next;
+      }
+      if ($c eq "\\") { $cur .= substr($s, $i + 1, 1); $in = 1; $i += 2; next }
+      if (substr($s, $i) =~ ($in ? $rmid : $rstart)) { $end->(); $i += $+[0]; $skip = 1; next }   # redirection: dropped with its target
+      last if $c =~ /[\n;&|()]/;
+      if ($c =~ /[ \t]/) { $end->(); $i++; next }
+      $dyn = 1 if $c eq "\$" || $c eq "`";
+      $cur .= $c; $in = 1; $i++;
+    }
+    $end->();
+    return @w;
+  }
+  # unreadable <ref> — a target this parser does not read as a branch name.
+  sub unreadable { my $t = shift; return $t =~ /\@\{|[~^:]/ || $t =~ /\A[0-9a-f]{7,40}\z/ || $t =~ /\A(?:HEAD|FETCH_HEAD|ORIG_HEAD)\z/ }
+  # land <sub> <words> — (skip) for a path checkout or a no-op, else
+  # (new|lit|bad, value).
+  sub land {
+    my ($sub, @w) = @_;
+    my %flag = map { $_ => 1 } qw(-q --quiet -f --force --no-track -m --merge
+      --progress --no-progress --discard-changes --guess --no-guess --recurse-submodules
+      --no-recurse-submodules --ignore-other-worktrees --overwrite-ignore --no-overwrite-ignore);
+    my %new = $sub eq "checkout" ? map { $_ => 1 } qw(-b -B --orphan)
+                                 : map { $_ => 1 } qw(-c -C --create --force-create --orphan);
+    my ($nb, @pos, $endopt, $dd, $track);
+    for (my $k = 0; $k < @w; $k++) {
+      my ($t, $dyn) = @{$w[$k]};
+      return ("bad", $t) if $dyn;
+      if ($endopt || $t !~ /\A-/ || $t eq "-") {
+        return ("bad", $t) if $t eq "-";
+        push @pos, $t; next;
+      }
+      # `--`: for checkout what follows is a pathspec; the positionals before
+      # it are weighed at the end.
+      if ($t eq "--") { $dd = scalar @pos; $endopt = 1; next }
+      if ($t eq "-t" || $t eq "--track" || $t =~ /\A--track=/) { $track = 1; next }
+      next if $flag{$t} || $t =~ /\A--(?:recurse-submodules|conflict)=/;
+      return ("skip") if $sub eq "checkout" && ($t =~ /\A(?:--ours|--theirs|-p|--patch)\z/ || $t =~ /\A--pathspec-from-file/);
+      return ("bad", $t) if $t eq "--detach" || ($sub eq "switch" && $t eq "-d");
+      if ($new{$t}) {
+        $k++; return ("bad", $t) if $k >= @w;
+        my ($v, $vd) = @{$w[$k]};
+        return ("bad", $v) if $vd || $v =~ /\A-/;
+        $nb = $v; next;
+      }
+      return ("bad", $t);                            # an option it does not know
+    }
+    return ("new", $nb) if defined $nb;
+    # checkout `-- <paths>` and `<tree> -- <paths>` are path checkouts;
+    # `<branch> --` with nothing after it switches to <branch>.
+    return ("skip") if $sub eq "checkout" && defined $dd && ($dd == 0 || @pos > $dd);
+    return ("skip") if @pos == 0 || ($sub eq "checkout" && @pos > 1);
+    return ("bad", join(" ", @pos)) if @pos > 1;
+    my $t = $pos[0];
+    return ("bad", $t) if unreadable($t);
+    if ($track) {
+      # --track lands on the target with its remote stripped, as git derives
+      # it: `refs/` and `remotes/` skipped, then everything up to the first /.
+      my $b = $t; $b =~ s{\Arefs/}{}; $b =~ s{\Aremotes/}{};
+      return ("bad", $t) unless $b =~ s{\A[^/]*/}{} && length $b;
+      return ("new", $b);
+    }
+    return ("lit", $t);
+  }
+  # The options of each merge-family command whose value is the next word and
+  # is not a ref it brings in (a message, a file, a strategy, a command).
+  my %val = (
+    merge  => { map { $_ => 1 } qw(-m -F --file -X -s --strategy --strategy-option --into-name) },
+    pull   => { map { $_ => 1 } qw(-X -s --strategy --strategy-option --cleanup --depth
+      --deepen --shallow-since --shallow-exclude --refmap --negotiation-tip --upload-pack
+      -o --server-option -j --jobs) },
+    rebase => { map { $_ => 1 } qw(-X -s --strategy --strategy-option -C --exec -x) },
+    reset  => {},
+  );
+  # The closed lists of option words a pull or rebase may carry (fix batch D):
+  # flags, long options also accepted as `--opt=value`, and short options with
+  # an attached value. Any other option word may take a separate value and
+  # shift the positionals, so the gate does not guess which word is the
+  # remote (pull) or the branch it lands on (rebase).
+  my %kflag = (
+    pull => { map { $_ => 1 } qw(-- -q --quiet -v --verbose --recurse-submodules
+      --no-recurse-submodules --commit --no-commit -e --edit --no-edit --ff --no-ff
+      --ff-only --gpg-sign --no-gpg-sign --log --no-log --signoff --no-signoff --stat
+      -n --no-stat --squash --no-squash --verify --no-verify --verify-signatures
+      --no-verify-signatures --summary --no-summary --autostash --no-autostash
+      --allow-unrelated-histories -r --rebase --no-rebase --all --append -a -f --force
+      -p --prune --no-tags -t --tags -k --keep --unshallow --update-shallow
+      --set-upstream -4 --ipv4 -6 --ipv6 --show-forced-updates --no-show-forced-updates
+      --dry-run --progress --no-progress) },
+    rebase => { map { $_ => 1 } qw(-- -i --interactive --continue --abort --skip --quit
+      --edit-todo --show-current-patch -q --quiet -v --verbose --stat -n --no-stat
+      --verify --no-verify -f --force-rebase --no-ff --fork-point --no-fork-point
+      --ignore-whitespace --committer-date-is-author-date --ignore-date
+      --reset-author-date --signoff -m --merge --apply -r --rebase-merges
+      --no-rebase-merges --root --autosquash --no-autosquash --autostash --no-autostash
+      -k --keep-empty --no-keep-empty --keep-base --reapply-cherry-picks
+      --no-reapply-cherry-picks --allow-empty-message --update-refs --no-update-refs
+      --reschedule-failed-exec --no-reschedule-failed-exec --gpg-sign --no-gpg-sign
+      --onto) },
+  );
+  my %keq = (
+    pull => { map { $_ => 1 } qw(--recurse-submodules --cleanup --gpg-sign --log
+      --strategy --strategy-option --rebase --depth --deepen --shallow-since
+      --shallow-exclude --refmap --negotiation-tip --upload-pack --server-option --jobs) },
+    rebase => { map { $_ => 1 } qw(--whitespace --empty --rebase-merges --gpg-sign
+      --strategy --strategy-option --exec --onto) },
+  );
+  my %katt = (pull => qr/\A-[XsSjo]./, rebase => qr/\A-[XsSCx]./);
+  sub known_opt {
+    my ($sub, $t) = @_;
+    return 1 if $kflag{$sub}{$t} || $val{$sub}{$t} || $t =~ $katt{$sub};
+    return $t =~ /\A(--[A-Za-z][A-Za-z-]*)=/ && $keq{$sub}{$1};
+  }
+  my $refre = qr{\A(?:refs/heads/|refs/remotes/[^/\s]+/|[A-Za-z0-9._-]+/)?sdlc/\S};
+  my @cpos;
+  while ($s =~ m/$cre/g) { push @cpos, [$-[0], substr($s, $-[0], $+[0] - $-[0])] }
+  my $cpos = @cpos ? $cpos[0][0] : -1;
+  my (@br, @mg);
+  while ($s =~ m/$gre/g) {
+    my ($pos, $o, $sub, $end) = ($-[0], $1, $2, $+[0]);
+    my @w = words($end);
+    if ($sub eq "checkout" || $sub eq "switch") {
+      my @l = land($sub, @w);
+      push @br, [$pos, @l] unless $l[0] eq "skip";
+      next;
+    }
+    my (@refs, @pos, $unk);
+    for (my $k = 0; $k < @w; $k++) {
+      my ($v, $vd) = @{$w[$k]};
+      $unk = $v if !defined $unk && $kflag{$sub} && $v =~ /\A-/ && !known_opt($sub, $v);
+      if ($val{$sub}{$v}) { $k++; next }
+      if ($sub eq "rebase" && $v eq "--onto") {      # a ref it brings in, not a positional
+        $k++; push @refs, $w[$k][0] if $k < @w && $w[$k][0] =~ $refre;
+        next;
+      }
+      push @pos, [$v, $vd] if $v !~ /\A-/;
+      $v =~ s/\A--?[A-Za-z][A-Za-z-]*=//;
+      push @refs, $v if $v =~ $refre;
+    }
+    # `git pull <remote> <ref>` merges the fetched <remote>/<ref>, not the
+    # local branch of that name: name the remote-tracking branch.
+    if ($sub eq "pull" && @pos >= 2 && $pos[0][0] ne ".") {
+      my %rp = map { $_->[0] => 1 } @pos[1 .. $#pos];
+      my $r = $pos[0][0];
+      @refs = map { my $x = $_; $x =~ s{\Arefs/heads/}{}; $rp{$_} ? "$r/$x" : $_ } @refs;
+    }
+    # `git rebase <upstream> <branch>` checks out <branch> first: it lands there.
+    my @over;
+    # With an option word it does not know, the positionals cannot be trusted:
+    # no override, and the gate weighs every positional instead (LO, P, PD).
+    if ($sub eq "rebase" && @pos == 2 && !defined $unk) {
+      my ($t, $d) = @{$pos[1]};
+      @over = ($d || unreadable($t)) ? ("bad", $t) : ("lit", $t);
+    }
+    push @mg, { pos => $pos, o => $o, over => [@over], refs => [@refs], sub => $sub,
+                unk => $unk, words => [@pos] } if @refs;
+  }
+  sub clean { my $v = shift; $v = "-" unless defined $v && length $v; $v =~ s/[\t\n]/ /g; return $v }
+  sub landing {
+    my ($pos) = @_; my @l = ("cur", "-");
+    for my $b (@br) { @l = ($b->[1], $b->[2]) if $b->[0] < $pos }
+    return (clean($l[0]), clean($l[1]));
+  }
+  # lastcd <pos> — the path of the last cd before offset <pos>, or "".
+  sub lastcd {
+    my $pre = substr($s, 0, $_[0] + 1); my $last = "";
+    while ($pre =~ /(?:^|[;&|(\s])cd[ \t]+((?:-[A-Za-z]+[ \t]+|--[ \t]+)*)("([^"]*)"|\x27([^\x27]*)\x27|([^;&|\s]+))/mg) {
+      $last = defined $3 ? $3 : defined $4 ? $4 : $5;
+    }
+    return $last;
+  }
+  # cdir <text> — the last `-C <dir>` in <text>, or "".
+  sub cdir {
+    my ($o, $dir) = ($_[0], "");
+    while ($o =~ /-C[ \t]+(?:"([^"]*)"|\x27([^\x27]*)\x27|([^\s;&|()]+))/g) {
+      $dir = defined $1 ? $1 : defined $2 ? $2 : $3;
+    }
+    return $dir;
+  }
+  print "C\t$cpos\n" if $cpos >= 0;
+  print join("\t", "LC", landing($_->[0])), "\n" for @cpos;
+  for my $i (0 .. $#mg) {
+    my @o = @{$mg[$i]{over}};
+    print join("\t", "LM", $i, @o ? (clean($o[0]), clean($o[1])) : landing($mg[$i]{pos})), "\n";
+    print "R\t$i\t", clean($_), "\n" for @{$mg[$i]{refs}};
+    next unless defined $mg[$i]{unk};
+    print join("\t", "LO", $i, $mg[$i]{sub}, clean($mg[$i]{unk})), "\n";
+    for my $p (@{$mg[$i]{words}}) {
+      if ($p->[1]) { print "PD\t$i\n" } else { print "P\t$i\t", clean($p->[0]), "\n" }
+    }
+  }
+  my $anchor = $cpos >= 0 ? $cpos : (@mg ? $mg[0]{pos} : -1);
+  exit 0 if $anchor < 0;
+  # The gate decides one repository per command: every commit and every merge
+  # decided on must share one cd/-C context, or the command is refused.
+  my (%ctx, %kind);
+  for my $c (@cpos) { $ctx{lastcd($c->[0]) . "\x01" . cdir($c->[1])} = 1; $kind{commit} = 1 }
+  for my $m (@mg) { $ctx{lastcd($m->{pos}) . "\x01" . cdir($m->{o})} = 1; $kind{merge} = 1 }
+  if (keys %ctx > 1) { print "XD\t$_\n" for sort keys %kind }
+  my $last = lastcd($anchor);
+  print "CD\t", clean($last), "\n" if length $last;
+  if ($cpos < 0) {
+    my $dir = cdir($mg[0]{o});
+    print "MG\t", clean($dir), "\n" if length $dir;
+  }
+' 2>/dev/null) || shapes_rc=$?
+if [ "$shapes_rc" -ne 0 ]; then
+  # The shape parser could not run. A commit is still recognised by the grep
+  # above; a command that might merge an sdlc/ branch cannot be told apart, so
+  # it is refused rather than let through unread.
+  if printf '%s' "$scan" | grep -qE '(^|[^A-Za-z0-9_.-])git[[:space:]].*(merge|pull|rebase|reset)' \
+     && printf '%s' "$scan" | grep -qF 'sdlc/'; then
+    gate_cannot_verify "parse the command's shape (perl failed), and it may merge an sdlc/ branch" "$scan"
+  fi
+  shapes=""
+fi
+# shape_field <tag> <n> — the n-th field of the first line tagged <tag>.
+shape_field() {
+  printf '%s\n' "$shapes" | awk -F '\t' -v t="$1" -v n="$2" '$1 == t { print $n; exit }'
+}
+is_merge=0
+printf '%s\n' "$shapes" | grep -q '^R	' && is_merge=1
+
+# Neither commit-shaped nor merge-family (a branch change alone is neither):
+# not this gate's business, and it leaves no trace (REQ-TOUCH-049).
+[ "$is_commit" -eq 1 ] || [ "$is_merge" -eq 1 ] || exit 0
+
+# The gate decides in ONE repository per command. A command whose commits and
+# merges sit behind different cd/-C contexts would be evaluated in the first
+# one only, so it is refused under each affected guard's mode rather than
+# decided on a repository some of its git commands never touch.
+xd_text="the gate decides one repository per command, and this command changes directory between its git commands (a different cd or git -C before them).
+Run the git commands of each repository as a separate command."
+if printf '%s\n' "$shapes" | grep -qx 'XD	merge'; then
+  guard_refuse evidence-merge "evidence-merge: $xd_text" || exit 2
+fi
+if printf '%s\n' "$shapes" | grep -qx 'XD	commit'; then
+  guard_refuse gate1-stamp "gate1-stamp: $xd_text" || exit 2
+fi
 
 # The hook runs from the SESSION's cwd, which may not be the repo the command
 # targets (compound commands routinely `cd <repo> && git commit`). Follow the
-# command's cd when it names one — the LAST cd that comes BEFORE the commit
-# (REQ-GATE-012): `cd a && cd b && git commit` commits in b, and a cd AFTER the
-# commit says nothing about where it ran. Taking the first cd on the first line
-# used to check repo a and allow the commit on a's result. Quoted paths, leading
-# `cd` options (`-P`, `--`) and a `cd` on an earlier line are all handled by the
-# same pass; `cd -` names no path and is dropped below. Whichever directory is
-# chosen, ENTERING it is the test — if the cd fails the gate has no idea which
-# repo it would be checking, so it blocks instead of guessing.
-cdtarget=$(printf '%s' "$scan" | perl -e '
-  local $/; my $s = <STDIN>;
-  my $re = qr/(?:^|[^A-Za-z0-9_.\-])git[ \t](?:[^|;&\n]*[ \t])?commit(?:[ \t;&|)"\x27`]|$)/m;
-  exit 0 unless $s =~ $re;
-  my $pre = substr($s, 0, $-[0] + 1);
-  my $last = "";
-  while ($pre =~ /(?:^|[;&|(\s])cd[ \t]+((?:-[A-Za-z]+[ \t]+|--[ \t]+)*)("([^"]*)"|\x27([^\x27]*)\x27|([^;&|\s]+))/mg) {
-    $last = defined $3 ? $3 : defined $4 ? $4 : $5;
-  }
-  print $last;
-' 2>/dev/null || true)
+# command's cd when it names one — the LAST cd that comes BEFORE the commit, or
+# before the merge when there is no commit (REQ-GATE-012): `cd a && cd b && git
+# commit` commits in b, and a cd AFTER the commit says nothing about where it
+# ran. Taking the first cd on the first line used to check repo a and allow the
+# commit on a's result. Quoted paths, leading `cd` options (`-P`, `--`) and a
+# `cd` on an earlier line are all handled by the shape pass above; `cd -` names
+# no path and is dropped below. Whichever directory is chosen, ENTERING it is
+# the test — if the cd fails the gate has no idea which repo it would be
+# checking, so it blocks instead of guessing.
+cdtarget=$(shape_field CD 2)
 # `cd -` is the one argument that names no path (it means $OLDPWD, which this
 # process does not share with the command's shell); treat it as "no cd target"
 # and fall back to the payload cwd, as before.
@@ -169,8 +475,13 @@ else
     && { cd "$hookcwd" \
          || gate_cannot_verify "enter the session directory from the hook payload" "$hookcwd"; }
 fi
-# also honor `git -C <repo> commit`
-gitc=$(printf '%s' "$scan" | sed -nE 's/.*git[[:space:]]+-C[[:space:]]+("([^"]+)"|'\''([^'\'']+)'\''|([^;&|[:space:]]+))[^|;&]*commit.*/\2\3\4/p')
+# also honor `git -C <repo> commit`, and `git -C <repo> merge …` when the
+# command decided on is a merge
+if [ "$is_commit" -eq 1 ]; then
+  gitc=$(printf '%s' "$scan" | sed -nE 's/.*git[[:space:]]+-C[[:space:]]+("([^"]+)"|'\''([^'\'']+)'\''|([^;&|[:space:]]+))[^|;&]*commit.*/\2\3\4/p')
+else
+  gitc=$(shape_field MG 2)
+fi
 # Same rule for the -C argument: an unresolvable one is not a followable path,
 # and sessions legitimately pass a variable there. Only an existing directory
 # that refuses entry means the gate cannot verify.
@@ -214,7 +525,9 @@ run_req_gate() {
     } >&2
     exit 2
   fi
-  [ -z "$rg_out" ] || printf '%s\n' "$rg_out"
+  # One JSON document carrying any guard warning and the requirement gate's
+  # report as additionalContext — never a permission decision (REQ-TOUCH-014).
+  guard_context_json "$rg_out" || true
   exit 0
 }
 
@@ -317,6 +630,258 @@ index_only() {
     exit($commits == 1 ? 0 : 1);
   ' 2>/dev/null
 }
+
+# --- the gate1-stamp guard (REQ-TOUCH-015, REQ-TOUCH-016) --------------------
+# A commit landing on `sdlc/<x>` needs a valid, non-stale Gate 1 stamp for the
+# feature <x> belongs to. It runs BEFORE the docs-only shortcut below: ticking
+# the last box is a prose-only commit, and a guard placed after the shortcut
+# would never see it. `sdlc/hunt-*` and `sdlc/rca-*` have no spec by design and
+# are exempt by name; any other `sdlc/<x>` that resolves to no feature is a
+# refusal under the guard's mode, since a branch whose spec was never committed
+# is exactly the case the stamp exists for. Every refusal goes through
+# guard_refuse: exit 2 in deny mode; in warn mode the warning is accumulated in
+# GUARD_WARNED and reaches stdout through run_req_gate, the only allow below.
+
+# feature_of_branch <x> — print the feature that the branch suffix <x> belongs
+# to: the longest `specs/<feature>/` name (`_`-prefixed excluded) that equals
+# <x> or is a prefix of <x> followed by `-`. Returns 1 when none does.
+feature_of_branch() {
+  local x="$1" best="" dir name
+  for dir in "$top"/specs/*/; do
+    [ -d "$dir" ] || continue
+    name=${dir%/}
+    name=${name##*/}
+    case "$name" in _*|'') continue ;; esac
+    if [ "$x" = "$name" ] || [ "${x#"$name"-}" != "$x" ]; then
+      [ "${#name}" -gt "${#best}" ] && best="$name"
+    fi
+  done
+  [ -n "$best" ] || return 1
+  printf '%s\n' "$best"
+}
+
+# stamp_guard_branch — evaluate gate1-stamp for the branch in $landing_branch. Returns
+# 0 when the commit may go on (stamp ok, guard not applicable, or warn mode);
+# exits 2 when the guard refuses in deny mode.
+stamp_guard_branch() {
+  local x feature sstate state_out state_rc=0
+  case "$landing_branch" in
+    sdlc/hunt-*|sdlc/rca-*) return 0 ;;
+    sdlc/?*) ;;
+    *) return 0 ;;
+  esac
+  x=${landing_branch#sdlc/}
+  if ! feature=$(feature_of_branch "$x"); then
+    guard_refuse gate1-stamp "gate1-stamp: the commit lands on $landing_branch, and no specs/<feature>/ resolves to it (a feature named '$x', or a prefix of it followed by '-').
+Commit the spec first: spec.md commits the spec and the Gate 1 stamp before /build." || exit 2
+    return 0
+  fi
+  sstate="$top/scripts/sdlc-state.sh"
+  [ -f "$sstate" ] || sstate="$HOME/.claude/scripts/sdlc-state.sh"
+  if [ ! -f "$sstate" ]; then
+    guard_refuse gate1-stamp "gate1-stamp: cannot verify the Gate 1 stamp for '$feature' on $landing_branch — sdlc-state.sh was not found.
+Looked in:
+  $top/scripts/sdlc-state.sh
+  $HOME/.claude/scripts/sdlc-state.sh
+Run install.sh from the framework checkout, then commit again." || exit 2
+    return 0
+  fi
+  state_out=$(bash "$sstate" stamp-state "$feature" < /dev/null 2>/dev/null) || state_rc=$?
+  case "$state_out" in
+    "ok "*) [ "$state_rc" -eq 0 ] && return 0 ;;
+  esac
+  [ -n "$state_out" ] || state_out="no answer (exit $state_rc)"
+  guard_refuse gate1-stamp "gate1-stamp: the commit lands on $landing_branch (feature '$feature') without a valid Gate 1 stamp — state: $state_out.
+After Gate 1 is approved, run: sdlc-state.sh stamp $feature (and commit specs/$feature/state.json)." || exit 2
+  return 0
+}
+
+# stamp_guard — stamp_guard_branch once for every distinct branch in
+# $landing_branches (one per line, collected from every commit in the command).
+stamp_guard() {
+  local landing_branch
+  while IFS= read -r landing_branch; do
+    [ -n "$landing_branch" ] || continue
+    stamp_guard_branch
+  done <<< "$landing_branches"
+}
+
+# --- the landing branch (REQ-TOUCH-048) --------------------------------------
+# current_branch — the branch HEAD names; detached HEAD is no branch, and no
+# branch is neither under sdlc/ nor the default branch.
+current_branch() { git symbolic-ref --short -q HEAD 2>/dev/null || true; }
+
+# resolve_landing <kind> <value> — the branch a command lands on, from the
+# shape pass: `new` is a branch the command creates (-b, -c, --orphan); `lit`
+# is a plain checkout/switch target, which lands there only when it names a
+# local branch or one a remote carries (git's own guess); anything else is a
+# path checkout or a checkout that fails, and the branch stays the current one.
+resolve_landing() {
+  case "$1" in
+    new) printf '%s\n' "$2" ;;
+    lit)
+      if git show-ref --verify -q "refs/heads/$2" 2>/dev/null \
+         || [ -n "$(git for-each-ref --format=x "refs/remotes/*/$2" 2>/dev/null)" ]; then
+        printf '%s\n' "$2"
+      else
+        current_branch
+      fi ;;
+    *) current_branch ;;
+  esac
+}
+
+# default_branch — origin/HEAD's branch, else `main` when it exists, else
+# `master`.
+default_branch() {
+  local d
+  d=$(git symbolic-ref --short -q refs/remotes/origin/HEAD 2>/dev/null) || d=""
+  if [ -n "$d" ]; then
+    printf '%s\n' "${d#origin/}"
+  elif git show-ref --verify -q refs/heads/main 2>/dev/null; then
+    printf 'main\n'
+  else
+    printf 'master\n'
+  fi
+}
+
+# --- the evidence-merge guard (REQ-TOUCH-017, REQ-TOUCH-018) -----------------
+# A merge-family command landing on the default branch needs current green
+# evidence for every sdlc/ ref it names: a committed evidence.json, read from
+# the ref, whose evidence tree is the ref's own and whose check and test exit
+# codes are 0. A ref that does not resolve, a ref that resolves to no feature
+# and a state script that cannot be found are refusals under the guard's mode,
+# never allows. Merges landing anywhere else (a task branch onto sdlc/<f>) are
+# not this guard's business.
+
+# evidence_guard_ref <ref> <landing> — evaluate one named ref.
+evidence_guard_ref() {
+  local ref="$1" land="$2" x feature sstate ev_out ev_rc=0
+  x=$ref
+  case "$x" in
+    refs/heads/*) x=${x#refs/heads/} ;;
+    refs/remotes/*) x=${x#refs/remotes/}; x=${x#*/} ;;
+  esac
+  case "$x" in
+    sdlc/*) ;;
+    */sdlc/*) x=${x#*/} ;;   # <remote>/sdlc/<x>
+  esac
+  x=${x#sdlc/}
+  if [ "${ref#-}" != "$ref" ] || ! git rev-parse -q --verify "$ref^{commit}" >/dev/null 2>&1; then
+    guard_refuse evidence-merge "evidence-merge: the command merges '$ref' into $land, and '$ref' does not resolve to a commit here, so its evidence cannot be read.
+Name an existing branch (fetch it first if it is a remote one), then merge again." || exit 2
+    return 0
+  fi
+  if ! feature=$(feature_of_branch "$x"); then
+    guard_refuse evidence-merge "evidence-merge: the command merges '$ref' into $land, and no specs/<feature>/ resolves to it (a feature named '$x', or a prefix of it followed by '-').
+Commit the feature's spec on the branch, record its evidence, then merge again." || exit 2
+    return 0
+  fi
+  sstate="$top/scripts/sdlc-state.sh"
+  [ -f "$sstate" ] || sstate="$HOME/.claude/scripts/sdlc-state.sh"
+  if [ ! -f "$sstate" ]; then
+    guard_refuse evidence-merge "evidence-merge: cannot verify the evidence of '$feature' for '$ref' — sdlc-state.sh was not found.
+Looked in:
+  $top/scripts/sdlc-state.sh
+  $HOME/.claude/scripts/sdlc-state.sh
+Run install.sh from the framework checkout, then merge again." || exit 2
+    return 0
+  fi
+  ev_out=$(bash "$sstate" evidence-state "$feature" "$ref" < /dev/null 2>/dev/null) || ev_rc=$?
+  if [ "$ev_rc" -eq 0 ] && [ "$ev_out" = green ]; then
+    return 0
+  fi
+  [ -n "$ev_out" ] || ev_out="no answer (exit $ev_rc)"
+  guard_refuse evidence-merge "evidence-merge: '$ref' (feature '$feature') would land on the default branch $land without current green evidence — state: $ev_out.
+On the branch, run: sdlc-state.sh evidence $feature, then commit specs/$feature/evidence.json, and merge again." || exit 2
+  return 0
+}
+
+# merge_guard — every merge-family command in the shape pass: where it lands,
+# and, on the default branch, every sdlc/ ref it names.
+merge_guard() {
+  local def tag i kind val land tag2 j ref lo lo_sub lo_opt lo_what guarded pw
+  def=$(default_branch)
+  while IFS=$'\t' read -r tag i kind val; do
+    [ "$tag" = LM ] || continue
+    if [ "$kind" = bad ]; then
+      guard_refuse evidence-merge "evidence-merge: cannot tell which branch the merge lands on — the git checkout/switch before it names '$val', which the gate cannot read as a branch (a variable, '-', '@{-1}', a sha, --detach or an option it does not know).
+Check out the branch by its literal name, then merge." || exit 2
+      continue
+    fi
+    land=$(resolve_landing "$kind" "$val")
+    # An option word outside the closed list (LO): the parse of the remote
+    # (pull) or of the branch a rebase lands on cannot be trusted. Refused
+    # when the command may land on the default branch: it is there already,
+    # or (rebase) any positional word names it or cannot be read.
+    lo=$(printf '%s\n' "$shapes" | awk -F '\t' -v i="$i" '$1 == "LO" && $2 == i { print $3 "\t" $4; exit }')
+    if [ -n "$lo" ]; then
+      lo_sub=${lo%%$'\t'*}; lo_opt=${lo#*$'\t'}
+      guarded=0
+      [ -n "$land" ] && [ "$land" = "$def" ] && guarded=1
+      if [ "$lo_sub" = rebase ]; then
+        while IFS=$'\t' read -r tag2 j pw; do
+          [ "$j" = "$i" ] || continue
+          [ "$tag2" = PD ] && guarded=1
+          [ "$tag2" = P ] || continue
+          case "$pw" in "$def"|"refs/heads/$def") guarded=1 ;; esac   # any positional names the default branch
+        done <<< "$shapes"
+      fi
+      [ "$guarded" -eq 1 ] || continue
+      if [ "$lo_sub" = rebase ]; then
+        lo_what="which branch the rebase lands on"
+      else
+        lo_what="which remote the pull fetches from"
+      fi
+      guard_refuse evidence-merge "evidence-merge: the git $lo_sub names '$lo_opt', an option the gate does not know; it may take a value and shift the words after it, so the gate cannot tell $lo_what, and the default branch $def may be rewritten.
+Spell the command with options the gate knows (see the closed lists in check-gate.sh), then run it again." || exit 2
+      continue
+    fi
+    [ -n "$land" ] && [ "$land" = "$def" ] || continue
+    while IFS=$'\t' read -r tag2 j ref; do
+      [ "$tag2" = R ] && [ "$j" = "$i" ] || continue
+      evidence_guard_ref "$ref" "$land"
+    done <<< "$shapes"
+  done <<< "$shapes"
+}
+
+if [ "$is_merge" -eq 1 ]; then
+  merge_guard
+  # A merge does not pass the commit gate: the checks are not its contract.
+  # Allowed here, with any warning carried to the model as context.
+  if [ "$is_commit" -ne 1 ]; then
+    guard_context_json "" || true
+    exit 0
+  fi
+fi
+
+# The branch each commit lands on: the last literal checkout/switch target
+# before it, else the current branch. Every commit in the command is weighed,
+# and the stamp guard runs once per distinct landing branch (the checks below
+# still run once). A target the gate cannot read is a refusal under the stamp
+# guard's mode; in warn mode the stamp guard is then not evaluated for that
+# commit (there is no branch to evaluate it on).
+landings=$'\n'
+landing_branches=""
+seen_lc=0
+while IFS=$'\t' read -r lc_tag lc_kind lc_val; do
+  [ "$lc_tag" = LC ] || continue
+  seen_lc=1
+  if [ "$lc_kind" = bad ]; then
+    case "$landings" in *$'\n'"bad:$lc_val"$'\n'*) continue ;; esac
+    landings="${landings}bad:$lc_val"$'\n'
+    guard_refuse gate1-stamp "gate1-stamp: cannot tell which branch the commit lands on — the git checkout/switch before it names '$lc_val', which the gate cannot read as a branch (a variable, '-', '@{-1}', a sha, --detach or an option it does not know).
+Check out the branch by its literal name, then commit." || exit 2
+    continue
+  fi
+  lb=$(resolve_landing "$lc_kind" "$lc_val")
+  case "$landings" in *$'\n'"br:$lb"$'\n'*) continue ;; esac
+  landings="${landings}br:$lb"$'\n'
+  landing_branches="${landing_branches}${lb}"$'\n'
+done <<< "$shapes"
+# No LC line at all (the shape pass did not run, or read no commit the grep
+# above saw): the commit lands on the current branch, as before.
+[ "$seen_lc" -eq 1 ] || landing_branches=$(current_branch)
+stamp_guard
 
 if index_only; then
   staged=$(git diff --cached --name-only 2>/dev/null)
