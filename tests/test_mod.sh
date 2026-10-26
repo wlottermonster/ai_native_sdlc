@@ -301,7 +301,15 @@ assert_grep '^ *0 fail$' "$tmpdir/plugin-test"
 # The section from its heading to the next `## ` heading; each heading of the
 # record exactly once in it, and the build id line.
 req "REQ-TOUCH-039"
+# The feature lives under specs/ while in flight and under specs/_shipped/
+# once archived; the record travels with it, so the test follows it there.
 design="$TEST_REPO/specs/three-touch-points-phase-1/design.md"
+if [ ! -f "$design" ]; then
+  for shipped in "$TEST_REPO"/specs/_shipped/*-three-touch-points-phase-1/design.md; do
+    [ -f "$shipped" ] && design="$shipped"
+  done
+fi
+[ -n "$design" ] && [ -f "$design" ] || { echo "three-touch-points-phase-1 design.md not found in specs/ or specs/_shipped/" >&2; exit 1; }
 section="$tmpdir/reprobe.md"
 sed -n '/^## Re-probe record$/,/^## /p' "$design" > "$section"
 assert_grep '^Build: 2\.1\.310 \(' "$section"

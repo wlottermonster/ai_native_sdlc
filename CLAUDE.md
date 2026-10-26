@@ -143,6 +143,11 @@ protected paths: specs/_shipped/**, specs/_hunt/**
   refused (fail-closed). The per-hook budget is 10 s and `$.clock.sleep`
   counts.** Probed on build 2.1.310 (re-probe record in the shipped spec);
   this is the fact phase 3 decides the gating question on.
+- **A test that reads a feature's spec by its in-flight path goes red the day
+  the spec is archived.** The commit gate runs `make check` alone, so the
+  archive commit passed it and `make test` was red on `main` until the next
+  review. A test that reads `specs/<feature>/` follows the feature into
+  `specs/_shipped/`, and an archive commit runs `make test` before it lands.
 
 ## Two repositories: where a push goes
 
