@@ -6,7 +6,11 @@
 #   sdlc-state.sh stamp-state <feature>  print none | invalid <path> | stale | ok <approved_at>
 #   sdlc-state.sh evidence <feature>     run check then test, write
 #                                        specs/<feature>/evidence.json; on a
-#                                        green run set `passes` in state.json
+#                                        green run set `passes` in state.json.
+#                                        With no local requirements.md the
+#                                        coverage is the declared umbrella's
+#                                        spec, else empty (a hunt branch);
+#                                        the evidence is still written here
 #   sdlc-state.sh record <feature> <verifier|ui-tester> <PASS|FAIL|COULD-NOT-TEST> "<note>"
 #                                        store a verdict against current evidence
 #   sdlc-state.sh evidence-state <feature> [<ref>|WORKTREE]
@@ -255,26 +259,65 @@ run_contract() {
   fi
 }
 
-# coverage_json <feature> — {"ID": label} for every ID in requirements.md, the
-# label read from `req-gate.sh --report`. An ID that a GATE A/B line names, or
-# that the report does not label, is MISSING.
+# coverage_root <feature> — set COV_ROOT to the repository whose
+# specs/<feature>/requirements.md the coverage is read from (hq#845): this
+# one when it holds that file, else the declared ancestor (guard-lib.sh
+# declared_ancestor, the rule the gate1-stamp guard resolves a spec by) of
+# this repository's root or of its main checkout's root, else empty — no spec
+# anywhere, as on a hunt branch. A requirements.md that exists and cannot be
+# read is a refusal, never an empty coverage; so is a local specs/<feature>/
+# that holds a spec's other files (state.json, tasks.md, design.md) without
+# requirements.md: that spec is broken here, not kept elsewhere.
+coverage_root() {
+  local feat="$1" common start r f
+  COV_ROOT=""
+  if [ -e "$(req_path "$feat")" ]; then
+    feature_dir_check "$feat"
+    COV_ROOT="$ROOT"
+    return 0
+  fi
+  for f in state.json tasks.md design.md; do
+    [ ! -e "$ROOT/specs/$feat/$f" ] || feature_dir_check "$feat"
+  done
+  common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || common=""
+  case "$common" in */.git) common=${common%/.git} ;; *) common="" ;; esac
+  for start in "$ROOT" "$common"; do
+    [ -n "$start" ] || continue
+    r=$(declared_ancestor "$start") || continue
+    [ -e "$r/specs/$feat/requirements.md" ] || continue
+    [ -f "$r/specs/$feat/requirements.md" ] && [ -r "$r/specs/$feat/requirements.md" ] \
+      || die "cannot read $r/specs/$feat/requirements.md"
+    COV_ROOT="$r"
+    return 0
+  done
+}
+
+# coverage_json <feature> [<root>] — {"ID": label} for every ID in
+# <root>/specs/<feature>/requirements.md (<root> defaults to this repository),
+# the label read from `req-gate.sh --report` run in <root>. An ID that a GATE
+# A/B line names, or that the report does not label, is MISSING. An empty
+# <root> argument is no spec anywhere: {}.
 coverage_json() {
-  local feat="$1" report labels
-  report=$(bash "$REQ_GATE" --report 2>/dev/null) \
+  local feat="$1" root="${2-$ROOT}" report labels
+  if [ -z "$root" ]; then
+    printf '{}\n'
+    return 0
+  fi
+  report=$(cd "$root" && bash "$REQ_GATE" --report 2>/dev/null) \
     || printf 'evidence: %s --report failed; unlabelled IDs are recorded MISSING\n' "$REQ_GATE" >&2
   labels=$(printf '%s\n' "$report" | awk -v f="$feat" '
     /^GATE B:/ { if ($3 == f) for (i = 4; i <= NF; i++) if ($i ~ /^REQ-/) bad[$i] = 1; next }
     /^GATE A:/ { if (index($0, "specs/" f "/requirements.md")) bad[$3] = 1; next }
     $1 == f && NF == 3 && $3 ~ /^(OK|OPEN|PARKED|UNTASKED|DEFERRED)$/ { lab[$2] = $3 }
     END { for (k in lab) if (!(k in bad)) printf "%s\t%s\n", k, lab[k] }')
-  req_tiers "$(req_path "$feat")" | cut -f1 | jq -Rn --arg labels "$labels" '
+  req_tiers "$root/specs/$feat/requirements.md" | cut -f1 | jq -Rn --arg labels "$labels" '
     ($labels | split("\n") | map(select(length > 0) | split("\t") | {key: .[0], value: .[1]}) | from_entries) as $l
     | [inputs | select(length > 0) | {key: ., value: ($l[.] // "MISSING")}] | from_entries'
 }
 
 cmd_evidence() {
   local feat="$1" ef sf ccmd tcmd crc=0 trc=0 tree after head branch cov c_rc c_s t_rc t_s
-  feature_dir_check "$feat"
+  coverage_root "$feat"
   ef=$(evidence_path "$feat")
   sf=$(state_path "$feat")
   ccmd=$(contract_cmd check) || crc=$?
@@ -295,7 +338,10 @@ cmd_evidence() {
   fi
   branch=$(git symbolic-ref --short -q HEAD) || branch="-"
   [ -n "$branch" ] || branch="-"
-  cov=$(coverage_json "$feat") || die "cannot read the coverage of $feat; nothing written"
+  cov=$(coverage_json "$feat" "$COV_ROOT") || die "cannot read the coverage of $feat; nothing written"
+  # A nested repository may carry no specs/<feature>/ yet: the evidence is
+  # this repository's, so it is written here all the same (hq#845).
+  mkdir -p "$(dirname "$ef")" 2>/dev/null || die "cannot create $(dirname "$ef"); nothing written"
   # A new run resets both verdict lanes: a verdict belongs to the evidence it
   # was given against.
   jq -n --arg feat "$feat" --arg at "$(now_iso)" --arg branch "$branch" \
@@ -314,8 +360,16 @@ cmd_evidence() {
     exit 1
   fi
   # The only writer of `passes` (REQ-TOUCH-006): true for exactly the IDs
-  # req-gate labelled OK in this green run, false for every other.
-  if [ ! -e "$sf" ]; then
+  # req-gate labelled OK in this green run, false for every other. state.json
+  # belongs to the repository that holds the spec: a coverage read from an
+  # umbrella, or from no spec, never creates or updates one here.
+  if [ "$COV_ROOT" != "$ROOT" ]; then
+    if [ -n "$COV_ROOT" ]; then
+      printf 'evidence: the spec of %s is in %s; passes not recorded (state.json stays there)\n' "$feat" "$COV_ROOT" >&2
+    else
+      printf 'evidence: no spec for %s here or in a declared enclosing repository; coverage recorded empty, passes not recorded\n' "$feat" >&2
+    fi
+  elif [ ! -e "$sf" ]; then
     printf 'evidence: no %s; passes not recorded (run init and stamp)\n' "$sf" >&2
   elif ! digest_ok "$sf"; then
     printf 'evidence: %s is invalid; passes not recorded, file left as it was\n' "$sf" >&2

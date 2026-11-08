@@ -49,6 +49,7 @@ PRIVATE_PATHS=(
   "docs"                                  # workspace logs and project names
   "specs/**/handoff.md"                   # session handoff ledgers, any depth
   "specs/workspace-interoperability"      # one-machine migration notes
+  "specs/_archived"                       # superseded specs keep owner-machine detail; private audit trail only
   "specs/portability-step5"
   "specs/portability-step6"
   "adapters/codex/docs/verification.md"   # one-machine session log

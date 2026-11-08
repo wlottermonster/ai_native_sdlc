@@ -148,6 +148,15 @@ protected paths: specs/_shipped/**, specs/_hunt/**
   archive commit passed it and `make test` was red on `main` until the next
   review. A test that reads `specs/<feature>/` follows the feature into
   `specs/_shipped/`, and an archive commit runs `make test` before it lands.
+- **A nested repository reads its spec from the umbrella that declares
+  itself.** When no `specs/<feature>/` resolves in the committing repository,
+  `gate1-stamp` searches the nearest enclosing git repository whose CLAUDE.md
+  or AGENTS.md carries a `decision log:` line, walking up from the repository
+  root and, for a linked worktree, from its main checkout. The repository's own
+  spec wins whenever it resolves; no spec in either place is still a refusal.
+  `evidence-merge` is not widened the same way: an umbrella's evidence records
+  the umbrella's tree, which excludes the repositories nested in it, so it is
+  no evidence about a nested ref.
 
 ## Two repositories: where a push goes
 

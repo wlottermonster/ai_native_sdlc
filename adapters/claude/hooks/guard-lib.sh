@@ -178,6 +178,26 @@ guard_context_json() {
     '{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
 }
 
+# declared_ancestor <dir> — print the nearest directory strictly above <dir>
+# that is a git repository root (it holds `.git`) and declares itself to the
+# framework (a line starting `decision log:` in its CLAUDE.md or AGENTS.md).
+# Returns 1 when there is none. One rule for the gate1-stamp and
+# evidence-merge guards (hq#844) and for sdlc-state.sh evidence (hq#845).
+declared_ancestor() {
+  local d="$1" f
+  while :; do
+    case "$d" in */?*) d=${d%/*} ;; *) return 1 ;; esac
+    [ -n "$d" ] || return 1
+    [ -e "$d/.git" ] || continue
+    for f in "$d/CLAUDE.md" "$d/AGENTS.md"; do
+      if [ -f "$f" ] && grep -q '^decision log:' "$f" 2>/dev/null; then
+        printf '%s\n' "$d"
+        return 0
+      fi
+    done
+  done
+}
+
 # evidence_tree <feature> <ref|WORKTREE> — print the sha of the tree of <ref>
 # (or of the working tree, untracked non-ignored files included) with
 # specs/<feature>/state.json and specs/<feature>/evidence.json removed, so

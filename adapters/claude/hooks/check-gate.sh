@@ -641,14 +641,27 @@ index_only() {
 # is exactly the case the stamp exists for. Every refusal goes through
 # guard_refuse: exit 2 in deny mode; in warn mode the warning is accumulated in
 # GUARD_WARNED and reaches stdout through run_req_gate, the only allow below.
+#
+# The spec root (hq#844): a family of repositories may keep its specs and their
+# stamps in an umbrella repository while the code commits land in repositories
+# nested inside it. When no spec resolves in the commit's own repository, the
+# nearest enclosing repository that declares itself to the framework (a line
+# starting `decision log:` in its CLAUDE.md or AGENTS.md) is searched instead,
+# walking up from this repository's root and, for a linked worktree, from its
+# main checkout's root. That is the only widening: the repository's own spec
+# decides whenever it resolves, a branch with no spec in either place is still
+# a refusal, and the umbrella's stamp is judged exactly as a local one.
 
-# feature_of_branch <x> — print the feature that the branch suffix <x> belongs
-# to: the longest `specs/<feature>/` name (`_`-prefixed excluded) that equals
-# <x> or is a prefix of <x> followed by `-`. Returns 1 when none does.
+# feature_of_branch <x> [<root>] [<file>] — print the feature that the branch
+# suffix <x> belongs to: the longest `<root>/specs/<feature>/` name
+# (`_`-prefixed excluded) that equals <x> or is a prefix of <x> followed by
+# `-`. <root> defaults to this repository's. With <file>, a directory counts
+# only when it holds that file. Returns 1 when none does.
 feature_of_branch() {
-  local x="$1" best="" dir name
-  for dir in "$top"/specs/*/; do
+  local x="$1" root="${2:-$top}" need="${3:-}" best="" dir name
+  for dir in "$root"/specs/*/; do
     [ -d "$dir" ] || continue
+    [ -z "$need" ] || [ -f "$dir$need" ] || continue
     name=${dir%/}
     name=${name##*/}
     case "$name" in _*|'') continue ;; esac
@@ -660,22 +673,56 @@ feature_of_branch() {
   printf '%s\n' "$best"
 }
 
+# declared_ancestor <dir> lives in guard-lib.sh: sdlc-state.sh evidence reads a
+# nested repository's coverage from the same umbrella (hq#845).
+
+# resolve_spec <x> — set SPEC_ROOT and SPEC_FEATURE for the branch suffix <x>:
+# this repository when a spec resolves here, else the declared ancestor of this
+# repository's root, else that of its main checkout's root (a linked worktree
+# may live anywhere). Returns 1 when no spec resolves in any of them. A local
+# specs/<feature>/ is a spec only when it holds requirements.md (hq#845): the
+# build writes evidence.json into the nested repository the code lands in, and
+# that directory alone must not hide the umbrella's spec and its stamp. The
+# umbrella's specs/<feature>/ needs requirements.md too: a stray directory there
+# (a leftover, or one holding only JSON) must not vouch for a spec-less branch.
+resolve_spec() {
+  local x="$1" common r start
+  SPEC_ROOT="$top"
+  SPEC_FEATURE=""
+  SPEC_FEATURE=$(feature_of_branch "$x" "$top" requirements.md) && return 0
+  common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || common=""
+  case "$common" in */.git) common=${common%/.git} ;; *) common="" ;; esac
+  for start in "$top" "$common"; do
+    [ -n "$start" ] || continue
+    r=$(declared_ancestor "$start") || continue
+    if SPEC_FEATURE=$(feature_of_branch "$x" "$r" requirements.md); then
+      SPEC_ROOT="$r"
+      return 0
+    fi
+  done
+  SPEC_ROOT="$top"
+  SPEC_FEATURE=""
+  return 1
+}
+
 # stamp_guard_branch — evaluate gate1-stamp for the branch in $landing_branch. Returns
 # 0 when the commit may go on (stamp ok, guard not applicable, or warn mode);
 # exits 2 when the guard refuses in deny mode.
 stamp_guard_branch() {
-  local x feature sstate state_out state_rc=0
+  local x feature sstate state_out state_rc=0 where=""
   case "$landing_branch" in
     sdlc/hunt-*|sdlc/rca-*) return 0 ;;
     sdlc/?*) ;;
     *) return 0 ;;
   esac
   x=${landing_branch#sdlc/}
-  if ! feature=$(feature_of_branch "$x"); then
-    guard_refuse gate1-stamp "gate1-stamp: the commit lands on $landing_branch, and no specs/<feature>/ resolves to it (a feature named '$x', or a prefix of it followed by '-').
+  if ! resolve_spec "$x"; then
+    guard_refuse gate1-stamp "gate1-stamp: the commit lands on $landing_branch, and no specs/<feature>/ resolves to it (a feature named '$x', or a prefix of it followed by '-'), neither in $top nor in an enclosing repository that declares itself (a 'decision log:' line in its CLAUDE.md or AGENTS.md).
 Commit the spec first: spec.md commits the spec and the Gate 1 stamp before /build." || exit 2
     return 0
   fi
+  feature=$SPEC_FEATURE
+  [ "$SPEC_ROOT" = "$top" ] || where=" in $SPEC_ROOT"
   sstate="$top/scripts/sdlc-state.sh"
   [ -f "$sstate" ] || sstate="$HOME/.claude/scripts/sdlc-state.sh"
   if [ ! -f "$sstate" ]; then
@@ -686,13 +733,15 @@ Looked in:
 Run install.sh from the framework checkout, then commit again." || exit 2
     return 0
   fi
-  state_out=$(bash "$sstate" stamp-state "$feature" < /dev/null 2>/dev/null) || state_rc=$?
+  # Read in the spec root: sdlc-state.sh answers for the repository it runs in.
+  # A root it cannot enter gives no answer, which is a refusal below.
+  state_out=$(cd "$SPEC_ROOT" && bash "$sstate" stamp-state "$feature" < /dev/null 2>/dev/null) || state_rc=$?
   case "$state_out" in
     "ok "*) [ "$state_rc" -eq 0 ] && return 0 ;;
   esac
   [ -n "$state_out" ] || state_out="no answer (exit $state_rc)"
-  guard_refuse gate1-stamp "gate1-stamp: the commit lands on $landing_branch (feature '$feature') without a valid Gate 1 stamp — state: $state_out.
-After Gate 1 is approved, run: sdlc-state.sh stamp $feature (and commit specs/$feature/state.json)." || exit 2
+  guard_refuse gate1-stamp "gate1-stamp: the commit lands on $landing_branch (feature '$feature'$where) without a valid Gate 1 stamp — state: $state_out.
+After Gate 1 is approved, run${where:+ from $SPEC_ROOT}: sdlc-state.sh stamp $feature (and commit specs/$feature/state.json)." || exit 2
   return 0
 }
 
@@ -753,6 +802,23 @@ default_branch() {
 # never allows. Merges landing anywhere else (a task branch onto sdlc/<f>) are
 # not this guard's business.
 
+# feature_on_ref <x> <ref> — print the longest feature name (`_`-prefixed
+# excluded) that equals <x> or is a prefix of <x> followed by `-` and whose
+# specs/<feature>/evidence.json is committed on <ref>. Returns 1 when none is.
+feature_on_ref() {
+  local x="$1" ref="$2" best="" name
+  [ "${ref#-}" = "$ref" ] || return 1
+  while IFS= read -r name; do
+    case "$name" in _*|'') continue ;; esac
+    if [ "$x" = "$name" ] || [ "${x#"$name"-}" != "$x" ]; then
+      [ "${#name}" -gt "${#best}" ] && best="$name"
+    fi
+  done < <(git ls-tree -r --name-only "$ref^{tree}" -- specs 2>/dev/null \
+             | sed -n 's#^specs/\([^/]*\)/evidence\.json$#\1#p')
+  [ -n "$best" ] || return 1
+  printf '%s\n' "$best"
+}
+
 # evidence_guard_ref <ref> <landing> — evaluate one named ref.
 evidence_guard_ref() {
   local ref="$1" land="$2" x feature sstate ev_out ev_rc=0
@@ -771,8 +837,20 @@ evidence_guard_ref() {
 Name an existing branch (fetch it first if it is a remote one), then merge again." || exit 2
     return 0
   fi
-  if ! feature=$(feature_of_branch "$x"); then
-    guard_refuse evidence-merge "evidence-merge: the command merges '$ref' into $land, and no specs/<feature>/ resolves to it (a feature named '$x', or a prefix of it followed by '-').
+  # The feature (hq#845): a specs/<feature>/ here, else the umbrella's spec
+  # (resolve_spec), else a specs/<feature>/evidence.json committed on the ref
+  # itself — a hunt branch has no spec anywhere. The evidence is read from the
+  # ref in this repository whichever answered. Only the spec-less names the
+  # stamp guard exempts (hunt-*, rca-*) may resolve from the ref: any other
+  # sdlc/<x> without a spec would otherwise vouch for itself (no Gate 1).
+  local on_ref_ok=1
+  case "$x" in hunt-*|rca-*) on_ref_ok=0 ;; esac
+  if feature=$(feature_of_branch "$x" "$top" requirements.md); then
+    :
+  elif resolve_spec "$x"; then
+    feature=$SPEC_FEATURE
+  elif [ "$on_ref_ok" -ne 0 ] || ! feature=$(feature_on_ref "$x" "$ref"); then
+    guard_refuse evidence-merge "evidence-merge: the command merges '$ref' into $land, and no feature resolves to it (a feature named '$x', or a prefix of it followed by '-'): no specs/<feature>/ in $top nor in an enclosing repository that declares itself, and no specs/<feature>/evidence.json on '$ref'.
 Commit the feature's spec on the branch, record its evidence, then merge again." || exit 2
     return 0
   fi
