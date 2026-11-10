@@ -18,6 +18,11 @@ case "$0" in */*) guard_lib="${0%/*}/guard-lib.sh" ;; *) guard_lib="./guard-lib.
   exit 2
 }
 input=$(cat)
+# A repository on the successor lifecycle (it committed
+# .claude/rules/sdlc-v2.md) is gated by CI, not here: silent, before the block
+# counter or any clock is touched. The repository is this hook's own: the one
+# holding its working directory, as `git rev-parse` resolves it below.
+successor_repo && exit 0
 
 GATE_MARGIN=30
 

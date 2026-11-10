@@ -491,6 +491,11 @@ fi
 
 top=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0   # not a repo → allow
 cd "$top" || gate_cannot_verify "enter the repository root git reported" "$top"
+# The repository the command lands on runs the successor lifecycle (it
+# committed .claude/rules/sdlc-v2.md): CI on its pull request is its gate, and
+# this one stays silent. Judged here, after the cd / git -C above, so the
+# session's own directory never decides for another repository.
+successor_repo "$top" && exit 0
 
 # --- the requirement gate (REQ-GATE-015, REQ-GATE-016) ----------------------
 # run_req_gate — runs req-gate.sh and ends this script: exit 0 only when the

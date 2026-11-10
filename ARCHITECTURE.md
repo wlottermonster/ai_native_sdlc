@@ -59,7 +59,18 @@ advisory. They are shell scripts registered in the client's settings
 | `autofix.sh` | PostToolUse on Edit/Write, async | Runs a formatter on the touched file if the repo has one. Never blocks. | ~25 lines |
 | `session-engines.sh` | SessionStart | Emits the active engine map as context so the session states which model fills which role. Never blocks. | ~115 lines |
 | `compact-policy.sh` | SessionStart (matcher `compact`) | Re-injects the routing section of the policy after compaction, the whole file if the heading is missing, and says so when the file is absent. Never blocks. | ~70 lines |
-| `guard-lib.sh` | Sourced by `check-gate.sh` and `dod.sh` | The warn-then-deny clock every guard shares. Sourced with `\|\| exit 2`, so a missing library is a refusal, not a fall-through to the allows. | ~190 lines |
+| `guard-lib.sh` | Sourced by `check-gate.sh` and `dod.sh`, and by `req-gate.sh` and `autofix.sh` for one helper | The warn-then-deny clock every guard shares, and `successor_repo`. The two gates source it with `\|\| exit 2`, so a missing library is a refusal, not a fall-through to the allows; `req-gate.sh` and `autofix.sh` read only the helper, and without the library they run as before, unsilenced. | ~190 lines |
+
+A repository on the successor lifecycle, one that has COMMITTED
+`.claude/rules/sdlc-v2.md`, is gated by CI on its pull request instead:
+`check-gate.sh`, `dod.sh`, `req-gate.sh` and `autofix.sh` exit 0 there in silence
+before any other work. The repository judged is the one each hook acts on: the
+commit gate follows the command's `cd` and `git -C`, the Stop gates take their
+working directory's repository, autofix takes the edited file's, and a nested
+repository answers for itself, never through its umbrella. A marker that is
+untracked or only staged does not count, so creating the file cannot switch a
+gate off. `compact-policy.sh` keeps its own check: the file present at the
+repository root.
 
 Two things to notice in `check-gate.sh`:
 

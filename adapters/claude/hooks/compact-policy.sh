@@ -55,6 +55,20 @@ src=$(printf '%s' "$payload" \
   | jq -r 'if type == "object" then (.source // "" | tostring) else "" end' 2>/dev/null) || src=""
 [ "$src" = compact ] || exit 0
 
+# A repository enrolled in the successor lifecycle carries its own steering
+# lines in `.claude/rules/sdlc-v2.md`, which the client re-injects by itself
+# after a compaction; this policy must not be injected beside them, or the
+# session holds two routing tables. The marker is that file, not a Spec-Kit
+# directory: a repository can hold `.specify/` from an old experiment and still
+# run under this policy. Resolved from the payload's cwd through git, so a
+# subdirectory finds its repository; outside git the cwd itself is checked.
+cwd=$(printf '%s' "$payload" \
+  | jq -r 'if type == "object" then (.cwd // "" | tostring) else "" end' 2>/dev/null) || cwd=""
+if [ -n "$cwd" ]; then
+  top=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || top=$cwd
+  [ -f "$top/.claude/rules/sdlc-v2.md" ] && exit 0
+fi
+
 if [ ! -r "$policy" ]; then
   emit "AI-Native SDLC: the policy file $policy is missing or unreadable, so nothing was re-injected after compaction. Reinstall the framework (install.sh) before routing any work."
   exit 0

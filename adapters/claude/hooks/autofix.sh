@@ -5,6 +5,16 @@
 set -u
 f=$(jq -r '.tool_response.filePath // .tool_input.file_path // empty' 2>/dev/null)
 [ -n "$f" ] && [ -f "$f" ] || exit 0
+# The edited file's repository runs the successor lifecycle (it committed
+# .claude/rules/sdlc-v2.md): this hook leaves it alone. The helper is shared
+# with the gates in guard-lib.sh; a library that cannot be sourced only means
+# the fixers run as before.
+case "$0" in */*) guard_lib="${0%/*}/guard-lib.sh" ;; *) guard_lib="./guard-lib.sh" ;; esac
+# shellcheck source-path=SCRIPTDIR source=guard-lib.sh
+. "$guard_lib" 2>/dev/null || true
+if command -v successor_repo >/dev/null 2>&1 && successor_repo "$(dirname "$f")"; then
+  exit 0
+fi
 
 case "$f" in
   *.py)

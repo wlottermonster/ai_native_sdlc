@@ -12,6 +12,19 @@
 # Usage: as a hook (reads+drains stdin) or manually: req-gate.sh [--report]
 set -u
 mode="${1:-enforce}"
+# A repository on the successor lifecycle (it committed
+# .claude/rules/sdlc-v2.md) is gated by CI: silent, before any other work. The
+# helper lives in guard-lib.sh beside this script. This gate never needed that
+# library and is copied alone in places, so a library that cannot be sourced
+# is not a refusal here: it only means the gate is not silenced and runs as
+# before. Draining a --stop payload is what the hook would have done anyway.
+case "$0" in */*) guard_lib="${0%/*}/guard-lib.sh" ;; *) guard_lib="./guard-lib.sh" ;; esac
+# shellcheck source-path=SCRIPTDIR source=guard-lib.sh
+. "$guard_lib" 2>/dev/null || true
+if command -v successor_repo >/dev/null 2>&1 && successor_repo; then
+  [ "$mode" = "--stop" ] && cat > /dev/null
+  exit 0
+fi
 # Only the explicit Stop adapter consumes the hook payload. Manual/commit
 # requirements enforcement never inherits handoff exemptions.
 if [ "$mode" = "--stop" ]; then

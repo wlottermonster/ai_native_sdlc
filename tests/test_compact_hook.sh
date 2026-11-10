@@ -235,6 +235,49 @@ em=$(head -n 1 "$tmproot/engines-matcher.txt")
 if printf 'compact\n' | grep -qE -- "$em"; then _test_fail "session-engines matcher /$em/ covers compact"
 else _test_pass "session-engines matcher /$em/ excludes compact"; fi
 
+# Coexistence with the successor lifecycle: a repository that carries
+# `.claude/rules/sdlc-v2.md` gets nothing from this hook, because the client
+# re-injects that file itself and two routing tables would contradict each
+# other. The marker is that file alone: a `.specify/` directory left by an old
+# experiment does not switch the policy off. The cwd may be a subdirectory of
+# the repository, or a directory outside any git repository.
+req "REQ-TOUCH-034"
+v2repo=$(mktemp -d "$tmproot/v2repo.XXXXXX")
+git -C "$v2repo" init -q
+mkdir -p "$v2repo/.claude/rules" "$v2repo/src/deep"
+printf 'steering lines\n' > "$v2repo/.claude/rules/sdlc-v2.md"
+h=$(home_with_policy "$tmproot" yes)
+for where in "$v2repo" "$v2repo/src/deep"; do
+  pl="$tmproot/v2-$(basename "$where").json"
+  printf '{"hook_event_name":"SessionStart","session_id":"s1","source":"compact","cwd":"%s"}' "$where" > "$pl"
+  out="$tmproot/v2-$(basename "$where").out"
+  run_hook "$out" "$h" "$pl"
+  assert_rc 0 "$out"
+  assert_silent "$out" "a successor-lifecycle repository (cwd $where)"
+done
+# Outside git, the cwd itself is the repository root.
+v2plain=$(mktemp -d "$tmproot/v2plain.XXXXXX")
+mkdir -p "$v2plain/.claude/rules"
+: > "$v2plain/.claude/rules/sdlc-v2.md"
+pl="$tmproot/v2-plain.json"
+printf '{"hook_event_name":"SessionStart","session_id":"s1","source":"compact","cwd":"%s"}' "$v2plain" > "$pl"
+out="$tmproot/v2-plain.out"
+run_hook "$out" "$h" "$pl"
+assert_rc 0 "$out"
+assert_silent "$out" "a successor-lifecycle directory outside git"
+# The same payload shape on a repository WITHOUT the marker, even one holding a
+# `.specify/` directory, still receives the policy: the guard keys on the file.
+v1repo=$(mktemp -d "$tmproot/v1repo.XXXXXX")
+git -C "$v1repo" init -q
+mkdir -p "$v1repo/.specify"
+pl="$tmproot/v1-cwd.json"
+printf '{"hook_event_name":"SessionStart","session_id":"s1","source":"compact","cwd":"%s"}' "$v1repo" > "$pl"
+out="$tmproot/v1-cwd.out"
+run_hook "$out" "$h" "$pl"
+assert_rc 0 "$out"
+assert_grep '^SessionStart$' "$out.event"
+assert_fgrep "$ROUTE_MARK" "$out.ctx"
+
 req "REQ-POLICY-007"
 assert_grep '^# AI-Native SDLC.*routing policy' "$TEST_REPO/sdlc-policy.md"
 h=$(mktemp -d "$tmproot/home.XXXXXX")

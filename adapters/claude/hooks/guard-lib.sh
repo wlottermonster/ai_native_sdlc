@@ -13,6 +13,9 @@
 #   guard_log <guard> <reason>    appends one line to <guard>.log.
 #   guards_seed_all [guard...]    creates the directory and seeds every missing
 #                                 .since (the three guards, plus any named).
+#   successor_repo [dir]          true when that repository committed
+#                                 .claude/rules/sdlc-v2.md: the hooks stay
+#                                 silent there.
 #
 # The clock: SDLC_GUARDS_DIR holds <guard>.since (the epoch second the warn
 # window opened) and <guard>.log. Clocks are seeded ONLY when the directory is
@@ -176,6 +179,19 @@ guard_context_json() {
   [ -n "$ctx" ] || return 1
   jq -cn --arg ctx "$ctx" \
     '{hookSpecificOutput: {hookEventName: "PreToolUse", additionalContext: $ctx}}'
+}
+
+# successor_repo [dir] — true when the git repository holding <dir> (default:
+# the current directory) has COMMITTED `.claude/rules/sdlc-v2.md` at HEAD. Such
+# a repository runs the successor lifecycle, gated by CI on its pull request,
+# and check-gate.sh, dod.sh, req-gate.sh and autofix.sh exit 0 there in
+# silence before any other work. Committed, not merely present: an untracked
+# or staged file must not switch a gate off, and a gate that cannot read HEAD
+# (no git, no commit yet, no repository) stays on. git resolves the nearest
+# repository, so a nested repository answers for itself and an umbrella's
+# marker never silences it. compact-policy.sh keeps its own presence check.
+successor_repo() {
+  git -C "${1:-.}" cat-file -e HEAD:.claude/rules/sdlc-v2.md 2>/dev/null
 }
 
 # declared_ancestor <dir> — print the nearest directory strictly above <dir>
